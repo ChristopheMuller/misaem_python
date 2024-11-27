@@ -55,8 +55,6 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 nmcmc: int = 2,
                 tau: float = 1.,
                 k1: int = 50,
-                var_cal: bool = True,
-                ll_obs_cal: bool = True,
                 subsets: Optional[ArrayLike] = None,
                 seed: Optional[int] = None):
 
@@ -67,8 +65,6 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.k1 = k1
         self.subsets = subsets
         self.seed = seed
-        self.var_cal = var_cal
-        self.ll_obs_cal = ll_obs_cal
         self.coef_ = None
         self.mu_ = None
         self.sigma_ = None
@@ -76,7 +72,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.std_err = None
         self.trace = {}
 
-    def fit(self, X, y, save_trace=False, progress_bar=True):
+    def fit(self, X, y, save_trace=False, progress_bar=True, var_cal=True, ll_obs_cal=True):
         """Fit the model using SAEM algorithm.
         
         Parameters
@@ -131,7 +127,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             mu = np.mean(X_sim, axis=0)
             sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
 
-            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
+            log_reg = LogisticRegression(solver='sag', max_iter=1000, fit_intercept=True)
             log_reg.fit(X_sim[:,self.subsets], y)
             beta = np.zeros(p + 1)
             beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
@@ -183,7 +179,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
 
                 # Fit logistic regression using complete cases in X_sim
-                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
+                log_reg = LogisticRegression(solver='sag', max_iter=1000)
                 log_reg.fit(X_sim[:,self.subsets], y)
                 beta_new = np.zeros(p + 1)
                 beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
@@ -209,24 +205,24 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             ll = None
             std_obs = None
 
-            if self.var_cal:
+            if var_cal:
                 var_obs = louis_lr_saem(beta, mu, sigma, y, X, pos_var=self.subsets, rindic=rindic, nmcmc=100)
                 std_obs = np.sqrt(np.diag(var_obs))
                 self.std_err = std_obs
 
-            if self.ll_obs_cal:
+            if ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
             
 
         else:
             # Case when there are no missing values
-            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
+            log_reg = LogisticRegression(solver='sag', max_iter=1000)
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)
             sigma = np.cov(X, rowvar=False)*(n-1)/n
-            if self.var_cal:
+            if var_cal:
                 P = np.exp(X @ beta) / (1 + np.exp(X @ beta))
                 W = np.diag(P * (1 - P))
                 X = np.hstack([np.ones((n, 1)), X])
@@ -234,7 +230,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 std_obs = np.sqrt(np.diag(var_obs))
                 self.std_err = std_obs
             
-            if self.ll_obs_cal:
+            if ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
 
@@ -244,7 +240,6 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.sigma_ = sigma
         return self
     
-
     def predict_proba(self, Xtest, method="map"):
         """Probability estimates for samples in X.
         
@@ -393,7 +388,7 @@ class MissGLMSelector:
     def __init__(self, seed: Optional[int] = None):
         self.seed = seed
         
-    def fit(self, X, y, progress_bar=True) -> MissGLM:
+    def fit(self, X, y, progress_bar=True, c) -> MissGLM:
         """Perform feature selection and return the best MissGLM model.
         
         Parameters
@@ -428,6 +423,10 @@ class MissGLMSelector:
             pbar = tqdm(total=total_iter, disable=not progress_bar)
 
         subsets1 = subsets[np.sum(subsets, axis=1) == 1, :]
+        best_bic = np.inf
+        best_model = None
+        best_subset = None
+
         for j in range(subsets1.shape[0]):
             pos_var = np.where(subsets1[j,:] == 1)[0]
             model_j = MissGLM(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
@@ -435,6 +434,11 @@ class MissGLMSelector:
             if progress_bar:
                 pbar.update(1)
             ll[0, pos_var] = model_j.ll_obs
+            bic_score = -2 * model_j.ll_obs + (pos_var.shape[0] + 1 + p + p*p) * np.log(N)
+            if bic_score < best_bic:
+                best_bic = bic_score
+                best_model = model_j
+                best_subset = pos_var
 
         id = np.zeros(p)
         BIC = np.zeros(p)
@@ -464,6 +468,11 @@ class MissGLMSelector:
                     if progress_bar:
                         pbar.update(1)
                     ll[i, j] = model_j.ll_obs
+                    bic_score = -2 * model_j.ll_obs + (pos_var.shape[0] + 1 + p + p*p) * np.log(N)
+                    if bic_score < best_bic:
+                        best_bic = bic_score
+                        best_model = model_j
+                        best_subset = pos_var
 
         SUBSETS[p-1,] = np.ones(p)
         model_j = MissGLM(subsets=np.arange(p), var_cal=False, ll_obs_cal=True, seed=self.seed)
@@ -473,13 +482,16 @@ class MissGLMSelector:
         ll[p-1,0] = model_j.ll_obs
         nb_x = p
         np_param = (nb_x + 1) + p + p*p
-        BIC[p-1,] = -2 * ll[p-1,0] + np_param * np.log(N)
+        bic = -2 * ll[p-1,0] + np_param * np.log(N)
+        BIC[p-1,] = bic
 
-        subset_choose = np.where(SUBSETS[np.argmin(BIC),:] == 1)[0]
-        model_j = MissGLM(subsets=subset_choose, var_cal=False, ll_obs_cal=True, seed=self.seed)
-        model_j.fit(X, y, progress_bar=False)
-        self.best_model_ = model_j
-        self.feature_subset_ =  subset_choose
+        if bic < best_bic:
+            best_bic = bic
+            best_model = model_j
+            best_subset = np.arange(p)
+
+        self.best_model_ = best_model
+        self.feature_subset_ =  best_subset
         self.forward_selection_ = SUBSETS
         self.bic_scores_ = BIC
         
