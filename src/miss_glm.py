@@ -95,7 +95,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             Returns self.
         """
 
-        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=True, force_all_finite="allow-nan")
+        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=True, ensure_all_finite="allow-nan")
         if np.any(np.isnan(y)):
             raise ValueError("No missing data allowed in response variable y")
         
@@ -298,7 +298,9 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                         mu_cond = mu1 + sigma12 @ np.linalg.inv(sigma22) @ (x2 - mu2)
                         Xtest[i, miss_col] = mu_cond
 
-                linear_pred = np.hstack([np.ones((n, 1)), Xtest]) @ beta_saem
+                # Use only the selected subset of features for prediction
+                Xtest_subset = Xtest[:, self.subsets] if hasattr(self, 'subsets') else Xtest
+                linear_pred = np.hstack([np.ones((n, 1)), Xtest_subset]) @ beta_saem
                 pr_saem = 1 / (1 + np.exp(-linear_pred))
 
             elif method == "map":
@@ -311,9 +313,13 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                     xi = Xtest[i, :]
 
                     if np.sum(rindic[i]) == 0:
-                        pr2[i] = log_reg(y=1, x=np.concatenate([[1], xi]), beta=beta_saem, log=False)
+                        # Extract only features in the subset for prediction
+                        if hasattr(self, 'subsets'):
+                            xi_subset = xi[self.subsets]
+                        else:
+                            xi_subset = xi
+                        pr2[i] = log_reg(y=1, x=np.concatenate([[1], xi_subset]), beta=beta_saem, log=False)
                     else:
-
                         miss_col = np.where(rindic[i])[0]
                         x2 = np.delete(xi, miss_col)
                         mu1 = mu_saem[miss_col]
@@ -335,7 +341,12 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                         pr1 = 0
                         for m in range(nmcmc):
                             xi[miss_col] = x1_all[m, :]
-                            pr1 += log_reg(y=1, x=np.concatenate([[1], xi]), beta=beta_saem, log=False)
+                            # Extract only features in the subset for prediction
+                            if hasattr(self, 'subsets'):
+                                xi_subset = xi[self.subsets]
+                            else:
+                                xi_subset = xi
+                            pr1 += log_reg(y=1, x=np.concatenate([[1], xi_subset]), beta=beta_saem, log=False)
 
                         pr2[i] = pr1 / nmcmc
 
@@ -345,8 +356,10 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 raise ValueError("Method must be either 'impute' or 'map'")
             
         else:
-
-            linear_pred = np.hstack([np.ones((n, 1)), Xtest]) @ beta_saem
+            # No missing values case
+            # Use only the selected subset of features for prediction
+            Xtest_subset = Xtest[:, self.subsets] if hasattr(self, 'subsets') else Xtest
+            linear_pred = np.hstack([np.ones((n, 1)), Xtest_subset]) @ beta_saem
             pr_saem = 1 / (1 + np.exp(-linear_pred))
 
         return np.vstack([1 - pr_saem, pr_saem]).T

@@ -5,7 +5,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
-from .utils import louis_lr_saem, likelihood_saem, combinations, log_reg
+from ..src.utils import louis_lr_saem, likelihood_saem, combinations, log_reg
 
 
 
@@ -55,6 +55,8 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 nmcmc: int = 2,
                 tau: float = 1.,
                 k1: int = 50,
+                var_cal: bool = True,
+                ll_obs_cal: bool = True,
                 subsets: Optional[ArrayLike] = None,
                 seed: Optional[int] = None):
 
@@ -65,6 +67,8 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.k1 = k1
         self.subsets = subsets
         self.seed = seed
+        self.var_cal = var_cal
+        self.ll_obs_cal = ll_obs_cal
         self.coef_ = None
         self.mu_ = None
         self.sigma_ = None
@@ -72,7 +76,191 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.std_err = None
         self.trace = {}
 
-    def fit(self, X, y, save_trace=False, progress_bar=True, var_cal=True, ll_obs_cal=True):
+    def fit_parallel(self, X, y, save_trace=False, progress_bar=True, n_jobs=-1):
+        """Fit the model using SAEM algorithm with parallelized MCMC sampling.
+        
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Training data, where n_samples is the number of samples
+            and n_features is the number of features.
+        y : array-like of shape (n_samples,)
+            Target values.
+        save_trace : bool, default=False
+            Whether to save evolution of parameters.
+        progress_bar : bool, default=True
+            Whether to display a progress bar.
+        n_jobs : int, default=-1
+            Number of jobs to run in parallel. -1 means using all processors.
+            
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+        from joblib import Parallel, delayed
+        
+        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=True, ensure_all_finite="allow-nan")
+        if np.any(np.isnan(y)):
+            raise ValueError("No missing data allowed in response variable y")
+        
+        # Remove rows where X is completely missing
+        complete_rows = ~np.all(np.isnan(X), axis=1)
+        X = X[complete_rows]
+        y = y[complete_rows]
+
+        n, p = X.shape
+
+        if self.subsets is None:
+            self.subsets = np.arange(p)
+        if isinstance(self.subsets, list):
+            self.subsets = np.array(self.subsets)
+
+        if (len(np.unique(self.subsets)) != len(self.subsets)):
+            raise ValueError("Subsets must be unique.")            
+
+        # Handle missingness indicator matrix
+        rindic = np.isnan(X)
+        missing_cols = np.any(rindic, axis=0)
+        num_missing_cols = np.sum(missing_cols)
+
+        # Initial settings for SAEM algorithm
+        if self.seed is not None:
+            np.random.seed(self.seed)
+
+        if num_missing_cols > 0:
+            X_sim = np.where(rindic, np.nanmean(X, axis=0), X)
+
+            mu = np.mean(X_sim, axis=0)
+            sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
+
+            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
+            log_reg.fit(X_sim[:,self.subsets], y)
+            beta = np.zeros(p + 1)
+            beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+
+            if save_trace:
+                self.trace["beta"] = [beta]
+                self.trace["mu"] = [mu]
+                self.trace["sigma"] = [sigma]
+
+            # Helper function for MCMC sampling that can be parallelized
+            def mcmc_sample_row(i, X_sim_row, y_i, rindic_i, mu, sigma, beta, nmcmc):
+                missing_idx = np.where(rindic_i)[0]
+                n_missing = len(missing_idx)
+                
+                if n_missing == 0:
+                    return None, None  # Nothing to update
+                    
+                xi = X_sim_row.copy()
+                sigma_inv = np.linalg.inv(sigma)
+                Oi = np.linalg.inv(sigma[np.ix_(missing_idx, missing_idx)])
+                mi = mu[missing_idx]
+                lobs = beta[0]  # intercept
+
+                if n_missing < p:
+                    obs_idx = np.setdiff1d(np.arange(p), missing_idx)
+                    mi = mi - (xi[obs_idx] - mu[obs_idx]) @ sigma_inv[np.ix_(obs_idx, missing_idx)] @ Oi
+                    lobs = lobs + np.sum(xi[obs_idx] * beta[obs_idx + 1])
+
+                cobs = np.exp(lobs)
+                xina = xi[missing_idx]
+                betana = beta[missing_idx + 1]
+
+                for m in range(nmcmc):
+                    xina_c = mi + np.random.normal(size=n_missing) @ np.linalg.cholesky(Oi)
+                    if y_i == 1:
+                        alpha = (1+np.exp(-sum(xina*betana))/cobs)/(1+np.exp(-sum(xina_c*betana))/cobs)
+                    else:
+                        alpha = (1+np.exp(sum(xina*betana))*cobs)/(1+np.exp(sum(xina_c*betana))*cobs)
+                    if np.random.uniform() < alpha:
+                        xina = xina_c
+
+                return i, xina
+
+            # Start SAEM iterations
+            for k in tqdm(range(self.maxruns), disable=not progress_bar):
+                beta_old = beta.copy()
+                
+                # Find indices of rows with missing values
+                missing_rows = np.where(np.any(rindic, axis=1))[0]
+                
+                # Parallel MCMC sampling step for rows with missing values
+                results = Parallel(n_jobs=n_jobs)(
+                    delayed(mcmc_sample_row)(
+                        i, X_sim[i], y[i], rindic[i], mu, sigma, beta, self.nmcmc
+                    ) for i in missing_rows
+                )
+                
+                # Update X_sim with the results
+                for i, xina in results:
+                    if i is not None:  # Skip rows without missing values
+                        missing_idx = np.where(rindic[i])[0]
+                        X_sim[i, missing_idx] = xina
+
+                # Fit logistic regression using complete cases in X_sim
+                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
+                log_reg.fit(X_sim[:,self.subsets], y)
+                beta_new = np.zeros(p + 1)
+                beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+
+                # Update beta using SAEM step size
+                gamma = 1 if k < self.k1 else 1 / ((k - self.k1 + 1) ** self.tau)
+                beta = (1 - gamma) * beta + gamma * beta_new
+                mu = (1 - gamma) * mu + gamma * np.nanmean(X_sim, axis=0)
+                sigma = (1 - gamma) * sigma + gamma * np.cov(X_sim, rowvar=False)
+
+                if save_trace:
+                    self.trace["beta"].append(beta)
+                    self.trace["mu"].append(mu)
+                    self.trace["sigma"].append(sigma)
+
+                # Check for convergence
+                if np.sum((beta - beta_old) ** 2) < self.tol_em:
+                    if progress_bar:
+                        print(f"...converged after {k+1} iterations.")
+                    break
+
+            var_obs = None
+            ll = None
+            std_obs = None
+
+            if self.var_cal:
+                var_obs = louis_lr_saem(beta, mu, sigma, y, X, pos_var=self.subsets, rindic=rindic, nmcmc=100)
+                std_obs = np.sqrt(np.diag(var_obs))
+                self.std_err = std_obs
+
+            if self.ll_obs_cal:
+                ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
+                self.ll_obs = ll
+            
+
+        else:
+            # Case when there are no missing values
+            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
+            log_reg.fit(X, y)
+            beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+            mu = np.nanmean(X, axis=0)
+            sigma = np.cov(X, rowvar=False)*(n-1)/n
+            if self.var_cal:
+                P = np.exp(X @ beta) / (1 + np.exp(X @ beta))
+                W = np.diag(P * (1 - P))
+                X = np.hstack([np.ones((n, 1)), X])
+                var_obs = np.linalg.inv(X.T @ W @ X)
+                std_obs = np.sqrt(np.diag(var_obs))
+                self.std_err = std_obs
+            
+            if self.ll_obs_cal:
+                ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
+                self.ll_obs = ll
+
+        # Store coefficients and parameters
+        self.coef_ = beta[np.hstack([0, self.subsets + 1])]
+        self.mu_ = mu
+        self.sigma_ = sigma
+        return self
+
+    def fit(self, X, y, save_trace=False, progress_bar=True):
         """Fit the model using SAEM algorithm.
         
         Parameters
@@ -91,7 +279,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             Returns self.
         """
 
-        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=True, force_all_finite="allow-nan")
+        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=True, ensure_all_finite="allow-nan")
         if np.any(np.isnan(y)):
             raise ValueError("No missing data allowed in response variable y")
         
@@ -127,7 +315,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             mu = np.mean(X_sim, axis=0)
             sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
 
-            log_reg = LogisticRegression(solver='sag', max_iter=1000, fit_intercept=True)
+            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
             log_reg.fit(X_sim[:,self.subsets], y)
             beta = np.zeros(p + 1)
             beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
@@ -179,7 +367,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
 
                 # Fit logistic regression using complete cases in X_sim
-                log_reg = LogisticRegression(solver='sag', max_iter=1000)
+                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
                 log_reg.fit(X_sim[:,self.subsets], y)
                 beta_new = np.zeros(p + 1)
                 beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
@@ -205,24 +393,24 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             ll = None
             std_obs = None
 
-            if var_cal:
+            if self.var_cal:
                 var_obs = louis_lr_saem(beta, mu, sigma, y, X, pos_var=self.subsets, rindic=rindic, nmcmc=100)
                 std_obs = np.sqrt(np.diag(var_obs))
                 self.std_err = std_obs
 
-            if ll_obs_cal:
+            if self.ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
             
 
         else:
             # Case when there are no missing values
-            log_reg = LogisticRegression(solver='sag', max_iter=1000)
+            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)
             sigma = np.cov(X, rowvar=False)*(n-1)/n
-            if var_cal:
+            if self.var_cal:
                 P = np.exp(X @ beta) / (1 + np.exp(X @ beta))
                 W = np.diag(P * (1 - P))
                 X = np.hstack([np.ones((n, 1)), X])
@@ -230,7 +418,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 std_obs = np.sqrt(np.diag(var_obs))
                 self.std_err = std_obs
             
-            if ll_obs_cal:
+            if self.ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
 
@@ -240,6 +428,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.sigma_ = sigma
         return self
     
+
     def predict_proba(self, Xtest, method="map"):
         """Probability estimates for samples in X.
         
@@ -293,7 +482,9 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                         mu_cond = mu1 + sigma12 @ np.linalg.inv(sigma22) @ (x2 - mu2)
                         Xtest[i, miss_col] = mu_cond
 
-                linear_pred = np.hstack([np.ones((n, 1)), Xtest]) @ beta_saem
+                # Use only the selected subset of features for prediction
+                Xtest_subset = Xtest[:, self.subsets] if hasattr(self, 'subsets') else Xtest
+                linear_pred = np.hstack([np.ones((n, 1)), Xtest_subset]) @ beta_saem
                 pr_saem = 1 / (1 + np.exp(-linear_pred))
 
             elif method == "map":
@@ -306,9 +497,13 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                     xi = Xtest[i, :]
 
                     if np.sum(rindic[i]) == 0:
-                        pr2[i] = log_reg(y=1, x=np.concatenate([[1], xi]), beta=beta_saem, log=False)
+                        # Extract only features in the subset for prediction
+                        if hasattr(self, 'subsets'):
+                            xi_subset = xi[self.subsets]
+                        else:
+                            xi_subset = xi
+                        pr2[i] = log_reg(y=1, x=np.concatenate([[1], xi_subset]), beta=beta_saem, log=False)
                     else:
-
                         miss_col = np.where(rindic[i])[0]
                         x2 = np.delete(xi, miss_col)
                         mu1 = mu_saem[miss_col]
@@ -330,7 +525,12 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                         pr1 = 0
                         for m in range(nmcmc):
                             xi[miss_col] = x1_all[m, :]
-                            pr1 += log_reg(y=1, x=np.concatenate([[1], xi]), beta=beta_saem, log=False)
+                            # Extract only features in the subset for prediction
+                            if hasattr(self, 'subsets'):
+                                xi_subset = xi[self.subsets]
+                            else:
+                                xi_subset = xi
+                            pr1 += log_reg(y=1, x=np.concatenate([[1], xi_subset]), beta=beta_saem, log=False)
 
                         pr2[i] = pr1 / nmcmc
 
@@ -340,8 +540,10 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 raise ValueError("Method must be either 'impute' or 'map'")
             
         else:
-
-            linear_pred = np.hstack([np.ones((n, 1)), Xtest]) @ beta_saem
+            # No missing values case
+            # Use only the selected subset of features for prediction
+            Xtest_subset = Xtest[:, self.subsets] if hasattr(self, 'subsets') else Xtest
+            linear_pred = np.hstack([np.ones((n, 1)), Xtest_subset]) @ beta_saem
             pr_saem = 1 / (1 + np.exp(-linear_pred))
 
         return np.vstack([1 - pr_saem, pr_saem]).T
@@ -388,7 +590,7 @@ class MissGLMSelector:
     def __init__(self, seed: Optional[int] = None):
         self.seed = seed
         
-    def fit(self, X, y, progress_bar=True, c) -> MissGLM:
+    def fit(self, X, y, progress_bar=True) -> MissGLM:
         """Perform feature selection and return the best MissGLM model.
         
         Parameters
@@ -423,10 +625,6 @@ class MissGLMSelector:
             pbar = tqdm(total=total_iter, disable=not progress_bar)
 
         subsets1 = subsets[np.sum(subsets, axis=1) == 1, :]
-        best_bic = np.inf
-        best_model = None
-        best_subset = None
-
         for j in range(subsets1.shape[0]):
             pos_var = np.where(subsets1[j,:] == 1)[0]
             model_j = MissGLM(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
@@ -434,11 +632,6 @@ class MissGLMSelector:
             if progress_bar:
                 pbar.update(1)
             ll[0, pos_var] = model_j.ll_obs
-            bic_score = -2 * model_j.ll_obs + (pos_var.shape[0] + 1 + p + p*p) * np.log(N)
-            if bic_score < best_bic:
-                best_bic = bic_score
-                best_model = model_j
-                best_subset = pos_var
 
         id = np.zeros(p)
         BIC = np.zeros(p)
@@ -468,11 +661,6 @@ class MissGLMSelector:
                     if progress_bar:
                         pbar.update(1)
                     ll[i, j] = model_j.ll_obs
-                    bic_score = -2 * model_j.ll_obs + (pos_var.shape[0] + 1 + p + p*p) * np.log(N)
-                    if bic_score < best_bic:
-                        best_bic = bic_score
-                        best_model = model_j
-                        best_subset = pos_var
 
         SUBSETS[p-1,] = np.ones(p)
         model_j = MissGLM(subsets=np.arange(p), var_cal=False, ll_obs_cal=True, seed=self.seed)
@@ -482,16 +670,13 @@ class MissGLMSelector:
         ll[p-1,0] = model_j.ll_obs
         nb_x = p
         np_param = (nb_x + 1) + p + p*p
-        bic = -2 * ll[p-1,0] + np_param * np.log(N)
-        BIC[p-1,] = bic
+        BIC[p-1,] = -2 * ll[p-1,0] + np_param * np.log(N)
 
-        if bic < best_bic:
-            best_bic = bic
-            best_model = model_j
-            best_subset = np.arange(p)
-
-        self.best_model_ = best_model
-        self.feature_subset_ =  best_subset
+        subset_choose = np.where(SUBSETS[np.argmin(BIC),:] == 1)[0]
+        model_j = MissGLM(subsets=subset_choose, var_cal=False, ll_obs_cal=True, seed=self.seed)
+        model_j.fit(X, y, progress_bar=False)
+        self.best_model_ = model_j
+        self.feature_subset_ =  subset_choose
         self.forward_selection_ = SUBSETS
         self.bic_scores_ = BIC
         
