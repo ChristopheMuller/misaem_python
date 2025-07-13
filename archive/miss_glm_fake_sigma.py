@@ -152,22 +152,16 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
                     missing_idx = np.where(rindic[i])[0]
                     n_missing = len(missing_idx)
-
                     if n_missing > 0:
                         
                         xi = X_sim[i,:]
-                        mu_M = mu[missing_idx]
+                        Oi = np.linalg.inv(sigma[np.ix_(missing_idx, missing_idx)])
+                        mi = mu[missing_idx]
                         lobs = beta[0] # intercept
 
                         if n_missing < p:
                             obs_idx = np.setdiff1d(np.arange(p), missing_idx)
-                            X_O = xi[obs_idx]
-                            Mu_O = mu[obs_idx]
-                            Sigma_OO = sigma[np.ix_(obs_idx, obs_idx)]
-                            Sigma_MO = sigma[np.ix_(missing_idx, obs_idx)]
-                            Sigma_MM = sigma[np.ix_(missing_idx, missing_idx)]
-                            mu_cond_M = mu_M + Sigma_MO @ np.linalg.inv(Sigma_OO) @ (X_O - Mu_O)
-                            sigma_cond_M = Sigma_MM - Sigma_MO @ np.linalg.inv(Sigma_OO) @ Sigma_MO.T
+                            mi = mi - (xi[obs_idx] - mu[obs_idx]) @ sigma_inv[np.ix_(obs_idx, missing_idx)] @ Oi
                             lobs = lobs + np.sum(xi[obs_idx] * beta[obs_idx + 1])
 
                         cobs = np.exp(lobs)
@@ -176,7 +170,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                         betana = beta[missing_idx + 1]
 
                         for m in range(self.nmcmc):
-                            xina_c = mu_cond_M + np.random.normal(size=n_missing) @ np.linalg.cholesky(sigma_cond_M)
+                            xina_c = mi + np.random.normal(size=n_missing) @ np.linalg.cholesky(Oi)
                             if y[i] == 1:
                                 alpha = (1+np.exp(-sum(xina*betana))/cobs)/(1+np.exp(-sum(xina_c*betana))/cobs)
                             else:
@@ -312,7 +306,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             elif method == "map":
 
                 pr2 = np.zeros(n)
-                nmcmc = 5000
+                nmcmc = 100
 
                 for i in range(n):
 
