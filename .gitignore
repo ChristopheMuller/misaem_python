@@ -1,2 +1,5 @@
 src/__pycache__/
 .Rproj.user
+
+logistic_with_NAs/data/
+
