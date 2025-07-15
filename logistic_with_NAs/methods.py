@@ -591,7 +591,7 @@ class pySAEM_fast(Classification):
 from ..src.miss_glm_parallel import MissGLM_parallel
 class pySAEM_fast(Classification):
 
-    def __init__(self, name="PY.SAEM.fast"):
+    def __init__(self, name="PY.SAEM.parallel"):
         super().__init__(name)
 
         self.can_predict = True
