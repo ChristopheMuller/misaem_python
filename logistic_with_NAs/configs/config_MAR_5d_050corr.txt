@@ -1,0 +1,3 @@
+sim=MAR_5d_050corr
+methods=SAEM
+training=100,500,1000,5000,10000
