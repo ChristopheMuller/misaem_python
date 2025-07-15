@@ -6,8 +6,6 @@ from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from scipy.stats import norm, multivariate_normal
 
-from SAEM import MissGLM
-
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -544,7 +542,8 @@ class RegLogPatByPat(Classification):
         return prediction
 
 
-class SAEM_python(Classification):
+from ..src.miss_glm import MissGLM
+class pySAEM(Classification):
 
     def __init__(self, name="PY.SAEM"):
         super().__init__(name)
@@ -555,6 +554,52 @@ class SAEM_python(Classification):
     def fit(self, X, M, y):
         Xp = X.copy()
         self.model = MissGLM(ll_obs_cal=False, var_cal=False, maxruns=1000)
+        self.model.fit(Xp, y, save_trace=False)
+
+    def predict_probs(self, X, M):
+        Xp = X.copy()
+        y_probs = self.model.predict_proba(Xp, method="map")[:,1]
+        return y_probs
+    
+    def return_params(self):
+        return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
+
+
+from ..src.miss_glm_fast import MissGLM_fast
+class pySAEM_fast(Classification):
+
+    def __init__(self, name="PY.SAEM.fast"):
+        super().__init__(name)
+
+        self.can_predict = True
+        self.return_beta = True
+
+    def fit(self, X, M, y):
+        Xp = X.copy()
+        self.model = MissGLM_fast(ll_obs_cal=False, var_cal=False, maxruns=1000)
+        self.model.fit(Xp, y, save_trace=False)
+
+    def predict_probs(self, X, M):
+        Xp = X.copy()
+        y_probs = self.model.predict_proba(Xp, method="map")[:,1]
+        return y_probs
+    
+    def return_params(self):
+        return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
+
+
+from ..src.miss_glm_parallel import MissGLM_parallel
+class pySAEM_fast(Classification):
+
+    def __init__(self, name="PY.SAEM.fast"):
+        super().__init__(name)
+
+        self.can_predict = True
+        self.return_beta = True
+
+    def fit(self, X, M, y):
+        Xp = X.copy()
+        self.model = MissGLM_parallel(ll_obs_cal=False, var_cal=False, maxruns=1000)
         self.model.fit(Xp, y, save_trace=False)
 
     def predict_probs(self, X, M):
