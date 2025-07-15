@@ -9,7 +9,7 @@ from .utils import louis_lr_saem, likelihood_saem, combinations, log_reg
 
 
 
-class MissGLM(BaseEstimator, ClassifierMixin):
+class MissGLM_parallel(BaseEstimator, ClassifierMixin):
     """Logistic regression model that handles missing data using SAEM algorithm.
     
     Parameters
@@ -131,75 +131,95 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             mu = np.mean(X_sim, axis=0)
             sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
 
-            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
-            log_reg.fit(X_sim[:,self.subsets], y)
+            log_reg_model = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
+            log_reg_model.fit(X_sim[:,self.subsets], y)
             beta = np.zeros(p + 1)
-            beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+            beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg_model.intercept_, log_reg_model.coef_.ravel()])
+
+            unique_patterns, pattern_indices = np.unique(rindic, axis=0, return_inverse=True)
 
             if save_trace:
                 self.trace["beta"] = [beta]
                 self.trace["mu"] = [mu]
                 self.trace["sigma"] = [sigma]
+                self.trace["accepted_X"] = []
 
             # Start SAEM iterations
             for k in tqdm(range(self.maxruns), disable=not progress_bar):
                 beta_old = beta.copy()
-                sigma_inv = np.linalg.inv(sigma)
 
                 # MCMC step - sample missing values from model 
                 # p(X_miss | X_obs, y, beta) \propto p(y | X, beta) p(X_miss | X_obs, mu, sigma) = Log Reg * conditional MVN
-                for i in range(n):
+                for pattern_idx, pattern in enumerate(unique_patterns):
+                    if not np.any(pattern):
+                        continue
 
-                    missing_idx = np.where(rindic[i])[0]
+                    rows_with_pattern = np.where(pattern_indices == pattern_idx)[0]
+                    n_pattern = len(rows_with_pattern)
+
+                    missing_idx = np.where(pattern)[0]
+                    obs_idx = np.where(~pattern)[0]
                     n_missing = len(missing_idx)
+
                     if n_missing > 0:
                         
-                        xi = X_sim[i,:]
-                        Oi = np.linalg.inv(sigma[np.ix_(missing_idx, missing_idx)])
-                        mi = mu[missing_idx]
-                        lobs = beta[0] # intercept
+                        X_O = X_sim[rows_with_pattern][:, obs_idx]
+                        Mu_O = mu[obs_idx]
 
-                        if n_missing < p:
-                            obs_idx = np.setdiff1d(np.arange(p), missing_idx)
-                            mi = mi - (xi[obs_idx] - mu[obs_idx]) @ sigma_inv[np.ix_(obs_idx, missing_idx)] @ Oi
-                            lobs = lobs + np.sum(xi[obs_idx] * beta[obs_idx + 1])
-
-                        cobs = np.exp(lobs)
-
-                        xina = xi[missing_idx]
-                        betana = beta[missing_idx + 1]
-
-                        for m in range(self.nmcmc):
-                            xina_c = mi + np.random.normal(size=n_missing) @ np.linalg.cholesky(Oi)
-                            if y[i] == 1:
-                                alpha = (1+np.exp(-sum(xina*betana))/cobs)/(1+np.exp(-sum(xina_c*betana))/cobs)
-                            else:
-                                alpha = (1+np.exp(sum(xina*betana))*cobs)/(1+np.exp(sum(xina_c*betana))*cobs)
-                            if np.random.uniform() < alpha:
-                                xina = xina_c
+                        Sigma_OO = sigma[np.ix_(obs_idx, obs_idx)]
+                        Sigma_MO = sigma[np.ix_(missing_idx, obs_idx)]
+                        Sigma_MM = sigma[np.ix_(missing_idx, missing_idx)]
                         
-                        X_sim[i, missing_idx] = xina
+                        solve_term_T = np.linalg.solve(Sigma_OO, Sigma_MO.T)
+                        sigma_cond_M = Sigma_MM - Sigma_MO @ solve_term_T
+                        mu_cond_M = mu[missing_idx] + (X_O - Mu_O) @ solve_term_T
 
+                        lobs = beta[0] + X_O @ beta[obs_idx + 1]
 
+                    else: # all features are missing
+                        sigma_cond_M = sigma.copy()
+                        mu_cond_M = np.tile(mu, (n_pattern, 1))
+                        lobs = beta[0]
 
-                # Fit logistic regression using complete cases in X_sim
-                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
-                log_reg.fit(X_sim[:,self.subsets], y)
+                    cobs = np.exp(lobs)
+                    xina = X_sim[rows_with_pattern][:, missing_idx]
+                    betana = beta[missing_idx + 1]
+                    y_pattern = y[rows_with_pattern]
+                    
+                    chol_sigma_cond_M = np.linalg.cholesky(sigma_cond_M)
+
+                    for m in range(self.nmcmc):
+                        xina_c = mu_cond_M + np.random.normal(size=(n_pattern, n_missing)) @ chol_sigma_cond_M
+                        
+                        current_logit_contrib = np.sum(xina * betana, axis=1)
+                        candidate_logit_contrib = np.sum(xina_c * betana, axis=1)
+                        
+                        is_y1 = (y_pattern == 1)
+                        
+                        ratio_y1 = (1 + np.exp(-current_logit_contrib) / cobs) / (1 + np.exp(-candidate_logit_contrib) / cobs)
+                        ratio_y0 = (1 + np.exp(current_logit_contrib) * cobs) / (1 + np.exp(candidate_logit_contrib) * cobs)
+                        
+                        alpha = np.where(is_y1, ratio_y1, ratio_y0)
+                        
+                        accepted = np.random.uniform(size=n_pattern) < alpha
+                        xina[accepted] = xina_c[accepted]
+                    
+                    X_sim[np.ix_(rows_with_pattern, missing_idx)] = xina
+
+                log_reg_model.fit(X_sim[:,self.subsets], y)
                 beta_new = np.zeros(p + 1)
-                beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+                beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg_model.intercept_, log_reg_model.coef_.ravel()])
 
-                # Update beta using SAEM step size
                 gamma = 1 if k < self.k1 else 1 / ((k - self.k1 + 1) ** self.tau)
                 beta = (1 - gamma) * beta + gamma * beta_new
-                mu = (1 - gamma) * mu + gamma * np.nanmean(X_sim, axis=0)
-                sigma = (1 - gamma) * sigma + gamma * np.cov(X_sim, rowvar=False)
+                mu = (1 - gamma) * mu + gamma * np.mean(X_sim, axis=0)
+                sigma = (1 - gamma) * sigma + gamma * np.cov(X_sim, rowvar=False, bias=True)
 
                 if save_trace:
-                    self.trace["beta"].append(beta)
-                    self.trace["mu"].append(mu)
-                    self.trace["sigma"].append(sigma)
+                    self.trace["beta"].append(beta.copy())
+                    self.trace["mu"].append(mu.copy())
+                    self.trace["sigma"].append(sigma.copy())
 
-                # Check for convergence
                 if np.sum((beta - beta_old) ** 2) < self.tol_em:
                     if progress_bar:
                         print(f"...converged after {k+1} iterations.")
@@ -245,7 +265,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         return self
     
 
-    def predict_proba(self, Xtest, method="map"):
+    def predict_proba(self, Xtest, method="map", nmcmc=5000):
         """Probability estimates for samples in X.
         
         Parameters
@@ -268,10 +288,12 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
         n = Xtest.shape[0]
 
-        if method == "MAP" or method == "map" or method == "Map":
+        # if method == "MAP" or method == "map" or method == "Map":
+        if method.lower() == "map":
             method = "map"
 
-        if method == "impute" or method == "Impute" or method == "IMPUTE":
+        # if method == "impute" or method == "Impute" or method == "IMPUTE":
+        if method.lower() == "impute":
             method = "impute"
 
         rindic = np.isnan(Xtest)
@@ -306,7 +328,6 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             elif method == "map":
 
                 pr2 = np.zeros(n)
-                nmcmc = 100
 
                 for i in range(n):
 
@@ -332,11 +353,12 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
                         mu_cond = mu1 + sigma12 @ np.linalg.inv(sigma22) @ (x2 - mu2)
                         sigma_cond = sigma11 - sigma12 @ np.linalg.inv(sigma22) @ sigma21
+                        sigma_cond_chol = np.linalg.cholesky(sigma_cond)
 
                         x1_all = np.zeros((nmcmc, len(miss_col)))
 
                         for m in range(nmcmc):
-                            x1_all[m, :] = mu_cond + np.random.normal(size=len(miss_col)) @ np.linalg.cholesky(sigma_cond)
+                            x1_all[m, :] = mu_cond + np.random.normal(size=len(miss_col)) @ sigma_cond_chol
 
                         pr1 = 0
                         for m in range(nmcmc):
@@ -384,7 +406,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
 
 class MissGLMSelector:
-    """Model selector for MissGLM using BIC criterion.
+    """Model selector for MissGLM_parallel using BIC criterion.
         
     Parameters
     ----------
@@ -393,8 +415,8 @@ class MissGLMSelector:
         
     Attributes
     ----------
-    best_model_ : MissGLM
-        The selected and fitted MissGLM model.
+    best_model_ : MissGLM_parallel
+        The selected and fitted MissGLM_parallel model.
     feature_subset_ : array-like
         Selected feature subset.
     forward_selection_ : array-like
@@ -406,8 +428,8 @@ class MissGLMSelector:
     def __init__(self, seed: Optional[int] = None):
         self.seed = seed
         
-    def fit(self, X, y, progress_bar=True) -> MissGLM:
-        """Perform feature selection and return the best MissGLM model.
+    def fit(self, X, y, progress_bar=True) -> MissGLM_parallel:
+        """Perform feature selection and return the best MissGLM_parallel model.
         
         Parameters
         ----------
@@ -420,7 +442,7 @@ class MissGLMSelector:
                 
         Returns
         -------
-        model : MissGLM
+        model : MissGLM_parallel
             The fitted model with the best feature subset.
         """
         # Initial settings for SAEM algorithm
@@ -443,7 +465,7 @@ class MissGLMSelector:
         subsets1 = subsets[np.sum(subsets, axis=1) == 1, :]
         for j in range(subsets1.shape[0]):
             pos_var = np.where(subsets1[j,:] == 1)[0]
-            model_j = MissGLM(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
+            model_j = MissGLM_parallel(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
             model_j.fit(X, y, progress_bar=False)
             if progress_bar:
                 pbar.update(1)
@@ -472,14 +494,14 @@ class MissGLMSelector:
             if i < p-1:
                 for j in range(subsetsi.shape[0]):
                     pos_var = np.where(subsetsi[j,:]==1)[0]
-                    model_j = MissGLM(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
+                    model_j = MissGLM_parallel(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
                     model_j.fit(X, y, progress_bar=False)
                     if progress_bar:
                         pbar.update(1)
                     ll[i, j] = model_j.ll_obs
 
         SUBSETS[p-1,] = np.ones(p)
-        model_j = MissGLM(subsets=np.arange(p), var_cal=False, ll_obs_cal=True, seed=self.seed)
+        model_j = MissGLM_parallel(subsets=np.arange(p), var_cal=False, ll_obs_cal=True, seed=self.seed)
         model_j.fit(X, y, progress_bar=False)
         if progress_bar:
             pbar.update(1)
@@ -489,7 +511,7 @@ class MissGLMSelector:
         BIC[p-1,] = -2 * ll[p-1,0] + np_param * np.log(N)
 
         subset_choose = np.where(SUBSETS[np.argmin(BIC),:] == 1)[0]
-        model_j = MissGLM(subsets=subset_choose, var_cal=False, ll_obs_cal=True, seed=self.seed)
+        model_j = MissGLM_parallel(subsets=subset_choose, var_cal=False, ll_obs_cal=True, seed=self.seed)
         model_j.fit(X, y, progress_bar=False)
         self.best_model_ = model_j
         self.feature_subset_ =  subset_choose
