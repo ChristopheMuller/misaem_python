@@ -246,7 +246,7 @@ class MissGLM_fast(BaseEstimator, ClassifierMixin):
         return self
     
 
-    def predict_proba(self, Xtest, method="map"):
+    def predict_proba(self, Xtest, method="map", nmcmc=500):
         """Probability estimates for samples in X.
         
         Parameters
@@ -307,7 +307,6 @@ class MissGLM_fast(BaseEstimator, ClassifierMixin):
             elif method == "map":
 
                 pr2 = np.zeros(n)
-                nmcmc = 100
 
                 for i in range(n):
 

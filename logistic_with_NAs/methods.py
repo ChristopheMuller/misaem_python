@@ -1,10 +1,6 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import Perceptron
-
-from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
-from scipy.stats import norm, multivariate_normal
 
 import warnings
 
@@ -542,7 +538,7 @@ class RegLogPatByPat(Classification):
         return prediction
 
 
-from ..src.miss_glm import MissGLM
+from src.miss_glm import MissGLM
 class pySAEM(Classification):
 
     def __init__(self, name="PY.SAEM"):
@@ -553,8 +549,8 @@ class pySAEM(Classification):
 
     def fit(self, X, M, y):
         Xp = X.copy()
-        self.model = MissGLM(ll_obs_cal=False, var_cal=False, maxruns=1000)
-        self.model.fit(Xp, y, save_trace=False)
+        self.model = MissGLM(ll_obs_cal=False, var_cal=False, maxruns=100)
+        self.model.fit(Xp, y, save_trace=False, progress_bar=True)
 
     def predict_probs(self, X, M):
         Xp = X.copy()
@@ -565,7 +561,7 @@ class pySAEM(Classification):
         return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
 
 
-from ..src.miss_glm_fast import MissGLM_fast
+from src.miss_glm_fast import MissGLM_fast
 class pySAEM_fast(Classification):
 
     def __init__(self, name="PY.SAEM.fast"):
@@ -576,8 +572,8 @@ class pySAEM_fast(Classification):
 
     def fit(self, X, M, y):
         Xp = X.copy()
-        self.model = MissGLM_fast(ll_obs_cal=False, var_cal=False, maxruns=1000)
-        self.model.fit(Xp, y, save_trace=False)
+        self.model = MissGLM_fast(ll_obs_cal=False, var_cal=False, maxruns=100)
+        self.model.fit(Xp, y, save_trace=False, progress_bar=True)
 
     def predict_probs(self, X, M):
         Xp = X.copy()
@@ -588,8 +584,8 @@ class pySAEM_fast(Classification):
         return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
 
 
-from ..src.miss_glm_parallel import MissGLM_parallel
-class pySAEM_fast(Classification):
+from src.miss_glm_parallel import MissGLM_parallel
+class pySAEM_parallel(Classification):
 
     def __init__(self, name="PY.SAEM.parallel"):
         super().__init__(name)
@@ -599,8 +595,8 @@ class pySAEM_fast(Classification):
 
     def fit(self, X, M, y):
         Xp = X.copy()
-        self.model = MissGLM_parallel(ll_obs_cal=False, var_cal=False, maxruns=1000)
-        self.model.fit(Xp, y, save_trace=False)
+        self.model = MissGLM_parallel(ll_obs_cal=False, var_cal=False, maxruns=100)
+        self.model.fit(Xp, y, save_trace=False, progress_bar=True)
 
     def predict_probs(self, X, M):
         Xp = X.copy()

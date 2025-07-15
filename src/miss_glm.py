@@ -261,7 +261,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         return self
     
 
-    def predict_proba(self, Xtest, method="map", nmcmc=5000):
+    def predict_proba(self, Xtest, method="map", nmcmc=500):
         """Probability estimates for samples in X.
         
         Parameters
