@@ -5,7 +5,7 @@ import time
 
 from .methods import *
 
-exp = "MCAR_5d_0corr"
+exp = "MCAR_5d_095corr"
 
 
 methods_list = [

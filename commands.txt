@@ -1,0 +1,20 @@
+
+# R
+
+oarsub -l walltime=12:0:0 -q production -n mcar_5d_050corr --stdout output/mcar_5d_050corr_R.txt --stderr output/mcar_5d_050corr_R__err.txt "module load apptainer && apptainer exec env.sif Rscript 3_train_methods_in_R.R configs/config_MCAR_5d_050corr.txt"
+
+oarsub -l walltime=12:0:0 -q production -n mcar_5d_0corr --stdout output/mcar_5d_0corr_R.txt --stderr output/mcar_5d_0corr_R__err.txt "module load apptainer && apptainer exec env.sif Rscript 3_train_methods_in_R.R configs/config_MCAR_5d_0corr.txt"
+
+oarsub -l walltime=12:0:0 -q production -n mcar_5d_095corr --stdout output/mcar_5d_095corr_R.txt --stderr output/mcar_5d_095corr_R__err.txt "module load apptainer && apptainer exec env.sif Rscript 3_train_methods_in_R.R configs/config_MCAR_5d_095corr.txt"
+
+oarsub -l walltime=12:0:0 -q production -n mar_5d_050corr --stdout output/mar_5d_050corr_R.txt --stderr output/mar_5d_050corr_R__err.txt "module load apptainer && apptainer exec env.sif Rscript 3_train_methods_in_R.R configs/config_MAR_5d_050corr.txt"
+
+oarsub -l walltime=12:0:0 -q production -n mcar_20d_05corr --stdout output/mcar_20d_05corr_R.txt --stderr output/mcar_20d_05corr_R__err.txt "module load apptainer && apptainer exec env.sif Rscript 3_train_methods_in_R.R configs/config_MCAR_20d_05corr.txt"
+
+
+# python 
+
+oarsub -l walltime=12:0:0 -q production -n mcar_5d_0corr --stdout logistic_with_NAs/output/mcar_5d_0corr_py.txt --stderr logistic_with_NAs/output/mcar_5d_0corr_py__err.txt --notify "[RUNNING,END,ERROR]mail:christophe.muller@inria.fr" "module load apptainer && apptainer exec logistic_with_NAs/env.sif python3 -m logistic_with_NAs.2_train_methods"
+
+
+oarsub -l walltime=12:0:0 -q production -n mcar_5d_095corr --stdout logistic_with_NAs/output/mcar_5d_095corr_py.txt --stderr logistic_with_NAs/output/mcar_5d_095corr_py__err.txt --notify "[RUNNING,END,ERROR]mail:christophe.muller@inria.fr" "module load apptainer && apptainer exec logistic_with_NAs/env.sif python3 -m logistic_with_NAs.2_train_methods"
