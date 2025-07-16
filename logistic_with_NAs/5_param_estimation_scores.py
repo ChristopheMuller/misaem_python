@@ -7,7 +7,7 @@ import os
 
 # %%
 
-exp = "SimMCAR"
+exp = "MCAR_5d_0corr"
 
 simulation_set_up = pd.read_csv(os.path.join("data", exp, "simulation_set_up.csv"))
 

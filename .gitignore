@@ -4,3 +4,4 @@ src/__pycache__/
 logistic_with_NAs/data/
 logistic_with_NAs/__pycache__/
 logistic_with_NAs/output/
+logistic_with_NAs/env.sif

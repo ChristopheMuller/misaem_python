@@ -7,10 +7,15 @@ import os
 
 # %%
 
-exp = "SimMCAR"
+exp = "MCAR_5d_0corr"
 
 df_set_up = pd.read_csv(os.path.join("data",exp,"set_up.csv"))
 df_simulations = pd.read_csv(os.path.join("data",exp,"simulation.csv"))
+
+# merge df_simulations["running_time_predict"]  and df_simulations["running_time_pred"] to same column (only one of them is used)
+for i in range(len(df_simulations)):
+    if not pd.isnull(df_simulations.loc[i,"running_time_predict"]):
+        df_simulations.loc[i,"running_time_pred"] = df_simulations.loc[i,"running_time_predict"]
 
 
 # %%
@@ -74,65 +79,4 @@ def deal_with_estimated_intercept(beta_str):
 df_simulations_enlarged["pred_beta"] = df_simulations_enlarged.apply(lambda x: deal_with_estimated_beta(x["estimated_beta"], x["method"], d=np.round(x["d"]).astype(int)), axis=1)
 df_simulations_enlarged["pred_intercept"] = df_simulations_enlarged.apply(lambda x: deal_with_estimated_intercept(x["estimated_beta"]), axis=1)
 df_simulations_enlarged.to_csv(os.path.join("data",exp,"simulation_set_up.csv"), index=False)
-
-# %%
-
-# fix your results if necessary
-
-def filter_simulations(method, n_train, exp):
-
-    df_simulations_temp = pd.read_csv(os.path.join("data",exp,"simulation.csv"))
-    df_simulations_copy = df_simulations_temp.copy()
-    all_n_train = df_simulations_temp["n_train"].unique()
-    if n_train is None:
-        n_train = all_n_train
-
-    df_simulations_temp = df_simulations_temp[df_simulations_temp["n_train"].isin(n_train)]
-    df_simulations_temp = df_simulations_temp[df_simulations_temp["method"].isin(method)]
-
-    for i, row in df_simulations_temp.iterrows():
-        file_name = row["file_name"]
-
-        # delete the file
-        if os.path.exists(os.path.join("data",exp,"pred_data", f"{file_name}.npz")):
-            os.remove(os.path.join("data",exp,"pred_data", f"{file_name}.npz"))
-
-        # delete row in the dataframe
-        df_simulations_copy = df_simulations_copy.drop(i)
-
-        print(f"{i}..Deleted {file_name}")
-
-    df_simulations_copy.to_csv(os.path.join("data",exp,"simulation.csv"), index=False)
-
-import os
-import pandas as pd
-
-# make a copy of all files with characterisitcs
-method = ["MICE.100.Y.IMP"]
-n_train = None
-
-exp = "ExpA"
-folder_goal = os.path.join("data",exp,"temp2")
-
-if not os.path.exists(folder_goal):
-    os.makedirs(folder_goal)
-
-def copy_files(method, n_train, exp, folder_goal):
-
-    df_simulations_temp = pd.read_csv(os.path.join("data",exp,"simulation.csv"))
-    all_n_train = df_simulations_temp["n_train"].unique()
-    if n_train is None:
-        n_train = all_n_train
-
-    df_simulations_temp = df_simulations_temp[df_simulations_temp["n_train"].isin(n_train)]
-    df_simulations_temp = df_simulations_temp[df_simulations_temp["method"].isin(method)]
-
-    for i, row in df_simulations_temp.iterrows():
-        file_name = row["file_name"]
-
-        # copy the file
-        if os.path.exists(os.path.join("data",exp,"temp", f"{file_name}.npz")):
-            os.system(f"cp {os.path.join('data',exp,'temp', f'{file_name}.npz')} {os.path.join(folder_goal, f'{file_name}.npz')}")
-
-        print(f"{i}..Copied {file_name}")
 
