@@ -21,7 +21,7 @@ name_score_matrix = "score_matrix.csv"
 
 # %% set up
 
-exp = "MCAR_5d_0corr"
+exp = "MAR_5d_050corr"
 
 all_methods_to_process = [
     "SAEM",
