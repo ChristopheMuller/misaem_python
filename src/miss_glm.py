@@ -140,11 +140,11 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 self.trace["beta"] = [beta]
                 self.trace["mu"] = [mu]
                 self.trace["sigma"] = [sigma]
-                self.trace["accepted_X"] = []
 
             # Start SAEM iterations
             for k in tqdm(range(self.maxruns), disable=not progress_bar):
                 beta_old = beta.copy()
+                sigma_inv = np.linalg.inv(sigma)
 
                 # MCMC step - sample missing values from model 
                 # p(X_miss | X_obs, y, beta) \propto p(y | X, beta) p(X_miss | X_obs, mu, sigma) = Log Reg * conditional MVN
@@ -152,26 +152,16 @@ class MissGLM(BaseEstimator, ClassifierMixin):
 
                     missing_idx = np.where(rindic[i])[0]
                     n_missing = len(missing_idx)
-
                     if n_missing > 0:
                         
                         xi = X_sim[i,:]
-                        mu_M = mu[missing_idx]
+                        Oi = np.linalg.inv(sigma_inv[np.ix_(missing_idx, missing_idx)])
+                        mi = mu[missing_idx]
                         lobs = beta[0] # intercept
 
                         if n_missing < p:
                             obs_idx = np.setdiff1d(np.arange(p), missing_idx)
-                            X_O = xi[obs_idx]
-                            Mu_O = mu[obs_idx]
-                            Sigma_OO = sigma[np.ix_(obs_idx, obs_idx)]
-                            Sigma_MO = sigma[np.ix_(missing_idx, obs_idx)]
-                            Sigma_MM = sigma[np.ix_(missing_idx, missing_idx)]
-                            solve_term = np.linalg.solve(Sigma_OO, (X_O - Mu_O))
-                            mu_cond_M = mu_M + Sigma_MO @ solve_term
-                            # mu_cond_M = mu_M + Sigma_MO @ np.linalg.inv(Sigma_OO) @ (X_O - Mu_O)
-                            solve_term = np.linalg.solve(Sigma_OO, Sigma_MO.T)
-                            sigma_cond_M = Sigma_MM - Sigma_MO @ solve_term
-                            # sigma_cond_M = Sigma_MM - Sigma_MO @ np.linalg.inv(Sigma_OO) @ Sigma_MO.T
+                            mi = mi - (xi[obs_idx] - mu[obs_idx]) @ sigma_inv[np.ix_(obs_idx, missing_idx)] @ Oi
                             lobs = lobs + np.sum(xi[obs_idx] * beta[obs_idx + 1])
 
                         cobs = np.exp(lobs)
@@ -179,20 +169,15 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                         xina = xi[missing_idx]
                         betana = beta[missing_idx + 1]
 
-                        chol_sigma_cond_M = np.linalg.cholesky(sigma_cond_M)
+                        Oi_chol = np.linalg.cholesky(Oi)
                         for m in range(self.nmcmc):
-                            xina_c = mu_cond_M + np.random.normal(size=n_missing) @ chol_sigma_cond_M
+                            xina_c = mi + np.random.normal(size=n_missing) @ Oi_chol
                             if y[i] == 1:
                                 alpha = (1+np.exp(-sum(xina*betana))/cobs)/(1+np.exp(-sum(xina_c*betana))/cobs)
                             else:
                                 alpha = (1+np.exp(sum(xina*betana))*cobs)/(1+np.exp(sum(xina_c*betana))*cobs)
                             if np.random.uniform() < alpha:
                                 xina = xina_c
-                                if save_trace:
-                                    self.trace["accepted_X"].append(1)
-                            else:
-                                if save_trace:
-                                    self.trace["accepted_X"].append(0)
                         
                         X_sim[i, missing_idx] = xina
 

@@ -12,8 +12,8 @@ if os.getcwd().endswith("test"):
 
 # %%
 
-path_data = os.path.join("logistic_with_NAs", "data", "MCAR_5d_0corr", "test_data", "MCAR_5d_0corr_rep0_n115000_d5_corr0_NA25.npz")
-path_data_bayes = os.path.join("logistic_with_NAs", "data", "MCAR_5d_0corr", "bayes_data", "MCAR_5d_0corr_rep0_n115000_d5_corr0_NA25.npz")
+path_data = os.path.join("experiments", "data", "MCAR_5d_0corr", "test_data", "MCAR_5d_0corr_rep0_n115000_d5_corr0_NA25.npz")
+path_data_bayes = os.path.join("experiments", "data", "MCAR_5d_0corr", "bayes_data", "MCAR_5d_0corr_rep0_n115000_d5_corr0_NA25.npz")
 data = np.load(path_data)
 X = data["X_obs"]
 y = data["y"]

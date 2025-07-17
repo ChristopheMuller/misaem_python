@@ -9,7 +9,7 @@ from .utils import louis_lr_saem, likelihood_saem, combinations, log_reg
 
 
 
-class MissGLM_parallel_fast(BaseEstimator, ClassifierMixin):
+class MissGLM_parallel(BaseEstimator, ClassifierMixin):
     """Logistic regression model that handles missing data using SAEM algorithm.
     
     Parameters
@@ -385,7 +385,7 @@ class MissGLMSelector:
     def __init__(self, seed: Optional[int] = None):
         self.seed = seed
         
-    def fit(self, X, y, progress_bar=True) -> MissGLM_parallel_fast:
+    def fit(self, X, y, progress_bar=True) -> MissGLM_parallel:
         """Perform feature selection and return the best MissGLM_parallel model.
         
         Parameters
@@ -422,7 +422,7 @@ class MissGLMSelector:
         subsets1 = subsets[np.sum(subsets, axis=1) == 1, :]
         for j in range(subsets1.shape[0]):
             pos_var = np.where(subsets1[j,:] == 1)[0]
-            model_j = MissGLM_parallel_fast(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
+            model_j = MissGLM_parallel(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
             model_j.fit(X, y, progress_bar=False)
             if progress_bar:
                 pbar.update(1)
@@ -451,14 +451,14 @@ class MissGLMSelector:
             if i < p-1:
                 for j in range(subsetsi.shape[0]):
                     pos_var = np.where(subsetsi[j,:]==1)[0]
-                    model_j = MissGLM_parallel_fast(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
+                    model_j = MissGLM_parallel(subsets=pos_var, var_cal=False, ll_obs_cal=True, seed=self.seed)
                     model_j.fit(X, y, progress_bar=False)
                     if progress_bar:
                         pbar.update(1)
                     ll[i, j] = model_j.ll_obs
 
         SUBSETS[p-1,] = np.ones(p)
-        model_j = MissGLM_parallel_fast(subsets=np.arange(p), var_cal=False, ll_obs_cal=True, seed=self.seed)
+        model_j = MissGLM_parallel(subsets=np.arange(p), var_cal=False, ll_obs_cal=True, seed=self.seed)
         model_j.fit(X, y, progress_bar=False)
         if progress_bar:
             pbar.update(1)
@@ -468,7 +468,7 @@ class MissGLMSelector:
         BIC[p-1,] = -2 * ll[p-1,0] + np_param * np.log(N)
 
         subset_choose = np.where(SUBSETS[np.argmin(BIC),:] == 1)[0]
-        model_j = MissGLM_parallel_fast(subsets=subset_choose, var_cal=False, ll_obs_cal=True, seed=self.seed)
+        model_j = MissGLM_parallel(subsets=subset_choose, var_cal=False, ll_obs_cal=True, seed=self.seed)
         model_j.fit(X, y, progress_bar=False)
         self.best_model_ = model_j
         self.feature_subset_ =  subset_choose

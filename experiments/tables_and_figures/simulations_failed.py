@@ -5,7 +5,7 @@
 # %%
 
 import os
-if os.getcwd().endswith("plots_scripts"):
+if os.getcwd().endswith("figures"):
     os.chdir(os.path.join(os.getcwd(), ".."))
 
 
@@ -14,7 +14,8 @@ if os.getcwd().endswith("plots_scripts"):
 import numpy as np
 import pandas as pd
 
-exp = "SimMCAR"
+exp = "MCAR_20d_05corr"
+# exp = "MCAR_5d_095corr"
 
 simulation_df = pd.read_csv(os.path.join("data", exp, "simulation.csv"))
 

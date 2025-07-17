@@ -17,7 +17,7 @@ methods_list = [
 
 training_size = np.array([100, 500, 1000, 5000, 10000])
 
-df_set_up = pd.read_csv(os.path.join("logistic_with_NAs", "data",exp,"set_up.csv"))
+df_set_up = pd.read_csv(os.path.join("experiments", "data",exp,"set_up.csv"))
 
 def simulation_exists(set_up, method_name, n_train, simulations_df):
     """Check if simulation exists in the simulations.csv file"""
@@ -33,12 +33,12 @@ def simulation_exists(set_up, method_name, n_train, simulations_df):
 def prediction_file_exists(set_up, method_name, n_train, exp):
     """Check if prediction file exists in pred_data folder"""
     save_name = f"{set_up}_{method_name}_{n_train}"
-    file_path = os.path.join("logistic_with_NAs", "data", exp, "pred_data", f"{save_name}.npz")
+    file_path = os.path.join("experiments", "data", exp, "pred_data", f"{save_name}.npz")
     return os.path.exists(file_path)
 
 # Load or create simulations DataFrame
-if os.path.exists(os.path.join("logistic_with_NAs", "data", exp, "simulation.csv")):
-    simulations_df = pd.read_csv(os.path.join("logistic_with_NAs", "data", exp, "simulation.csv"))
+if os.path.exists(os.path.join("experiments", "data", exp, "simulation.csv")):
+    simulations_df = pd.read_csv(os.path.join("experiments", "data", exp, "simulation.csv"))
 else:
     simulations_df = pd.DataFrame({
         "set_up": [],
@@ -56,14 +56,14 @@ for i in range(df_set_up.shape[0]):
     print(f"Running set up {i+1} out of {df_set_up.shape[0]}: {df_set_up['set_up'][i]}")
 
     # load as npz
-    data = np.load(os.path.join("logistic_with_NAs", "data", exp, "original_data", f"{df_set_up['set_up'][i]}.npz"))
+    data = np.load(os.path.join("experiments", "data", exp, "original_data", f"{df_set_up['set_up'][i]}.npz"))
     X_obs = data["X_obs"]
     M = data["M"]
     y = data["y"]
     y_probs = data["y_probs"]
     X_full = data["X_full"]
 
-    data_test = np.load(os.path.join("logistic_with_NAs", "data", exp, "test_data", f"{df_set_up['set_up'][i]}.npz"))
+    data_test = np.load(os.path.join("experiments", "data", exp, "test_data", f"{df_set_up['set_up'][i]}.npz"))
     X_test = data_test["X_obs"]
     M_test = data_test["M"]
     y_probs_test = data_test["y_probs"]
@@ -99,7 +99,7 @@ for i in range(df_set_up.shape[0]):
                 }
 
                 save_name = f"{df_set_up['set_up'][i]}_{met.name}_{training_size[j]}"
-                np.savez(os.path.join("logistic_with_NAs", "data", exp, "pred_data", f"{save_name}.npz"), **to_save)
+                np.savez(os.path.join("experiments", "data", exp, "pred_data", f"{save_name}.npz"), **to_save)
 
             else:
                 save_name = np.nan
@@ -120,4 +120,4 @@ for i in range(df_set_up.shape[0]):
                 "running_time_predict": running_time_predict if met.can_predict else None
             }
             simulations_df = pd.concat([simulations_df, pd.DataFrame(new_row_sim, index=[0])])
-            simulations_df.to_csv(os.path.join("logistic_with_NAs", "data", exp, "simulation.csv"), index=False)
+            simulations_df.to_csv(os.path.join("experiments", "data", exp, "simulation.csv"), index=False)

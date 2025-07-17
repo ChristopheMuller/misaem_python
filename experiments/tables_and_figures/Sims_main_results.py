@@ -21,7 +21,8 @@ from setups_design import metrics_config, methods_config
 
 # %% set up
 
-exp = "MCAR_20d_05corr"
+# exp = "MCAR_20d_05corr"
+exp = "MCAR_5d_095corr"
 score_matrix = pd.read_csv(os.path.join("data", exp, "score_matrix.csv"))
 score_matrix = score_matrix[score_matrix["exp"] == exp]
 
@@ -39,9 +40,11 @@ score_matrix = score_matrix[score_matrix["filter"] == "all"]
 
 methods_sel = [
     "SAEM",
-    "py.SAEM",
-    "py.SAEM.fast",
-    "py.SAEM.parallel"
+    # "py.SAEM",
+    # "py.SAEM.fast",
+    "py.SAEM.fast.fixed",
+    # "py.SAEM.parallel",
+    "py.SAEM.parallel.fast"
 ]
 selection_name = ""
 
@@ -49,7 +52,8 @@ selection_name = ""
 scores_sel = ["misclassification", "mae_bayes", "mse_error", "running_time_train", "running_time_pred"]
 metrics_name = "4_metrics"
 filter_bayes = [True, True, False, False, False]
-ylimsmax = [0.03, 0.10, 0.55, 1500, 25]
+# ylimsmax = [0.025, 0.12, 0.55, 1000, 30]
+ylimsmax = [0.015, 0.09, 0.55, 500, 10]
 
 ntrains = [100, 500, 1000, 5000, 10000]
 
