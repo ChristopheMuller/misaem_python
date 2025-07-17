@@ -19,3 +19,5 @@ oarsub -l walltime=12:0:0 -q production -n mcar_5d_0corr --stdout logistic_with_
 oarsub -l walltime=12:0:0 -q production -n mcar_5d_095corr --stdout logistic_with_NAs/output/mcar_5d_095corr_py.txt --stderr logistic_with_NAs/output/mcar_5d_095corr_py__err.txt --notify "[RUNNING,END,ERROR]mail:christophe.muller@inria.fr" "module load apptainer && apptainer exec logistic_with_NAs/env.sif python3 -m logistic_with_NAs.2_train_methods"
 
 oarsub -l walltime=12:0:0 -q production -n mar_5d_050corr --stdout logistic_with_NAs/output/mar_5d_050corr__py.txt --stderr logistic_with_NAs/output/mar_5d_050corr_py__err.txt --notify "[RUNNING,END,ERROR]mail:christophe.muller@inria.fr" "module load apptainer && apptainer exec logistic_with_NAs/env.sif python3 -m logistic_with_NAs.2_train_methods"
+
+oarsub -l walltime=24:0:0 -q production -n mcar_20d_05corr --stdout logistic_with_NAs/output/mcar_20d_05corr__py.txt --stderr logistic_with_NAs/output/mcar_20d_05corr_py__err.txt --notify "[RUNNING,END,ERROR]mail:christophe.muller@inria.fr" "module load apptainer && apptainer exec logistic_with_NAs/env.sif python3 -m logistic_with_NAs.2_train_methods"
