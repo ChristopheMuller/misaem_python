@@ -607,3 +607,26 @@ class pySAEM_parallel(Classification):
     def return_params(self):
         return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
 
+
+from src.miss_glm_parallel_fast import MissGLM_parallel_fast
+class pySAEM_parallel_fast(Classification):
+
+    def __init__(self, name="PY.SAEM.parallel"):
+        super().__init__(name)
+
+        self.can_predict = True
+        self.return_beta = True
+
+    def fit(self, X, M, y):
+        Xp = X.copy()
+        self.model = MissGLM_parallel_fast(ll_obs_cal=False, var_cal=False, maxruns=1000)
+        self.model.fit(Xp, y, save_trace=False, progress_bar=True)
+
+    def predict_probs(self, X, M):
+        Xp = X.copy()
+        y_probs = self.model.predict_proba(Xp, method="map")[:,1]
+        return y_probs
+    
+    def return_params(self):
+        return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
+
