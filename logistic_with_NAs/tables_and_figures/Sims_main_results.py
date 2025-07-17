@@ -21,12 +21,10 @@ from setups_design import metrics_config, methods_config
 
 # %% set up
 
-exp = "MCAR_5d_095corr"
+exp = "MCAR_20d_05corr"
 score_matrix = pd.read_csv(os.path.join("data", exp, "score_matrix.csv"))
 score_matrix = score_matrix[score_matrix["exp"] == exp]
 
-
-metrics_config
 
 # %% 
 
@@ -51,7 +49,7 @@ selection_name = ""
 scores_sel = ["misclassification", "mae_bayes", "mse_error", "running_time_train", "running_time_pred"]
 metrics_name = "4_metrics"
 filter_bayes = [True, True, False, False, False]
-ylimsmax = [0.03, 0.10, 0.55, 150, 200]
+ylimsmax = [0.03, 0.10, 0.55, 1500, 25]
 
 ntrains = [100, 500, 1000, 5000, 10000]
 
