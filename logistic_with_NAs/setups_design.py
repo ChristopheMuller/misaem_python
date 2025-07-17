@@ -21,9 +21,10 @@ color_palette = sns.color_palette()
 
 methods_config = {
 
-    "SAEM": {"label": "SAEM", "color": color_palette[5], "linestyle": "-", "marker":"D"}, # Changed marker
+    "SAEM": {"label": "R.SAEM", "color": color_palette[5], "linestyle": "-", "marker":"D"}, # Changed marker
     "py.SAEM": {"label": "py.SAEM", "color": color_palette[1], "linestyle": "--", "marker":"D"},
     "py.SAEM.fast": {"label": "py.SAEM.fast", "color": color_palette[2], "linestyle": "-.", "marker":"D"},
+    "py.SAEM.fast.fixed": {"label": "py.SAEM.fast.fixed", "color": color_palette[0], "linestyle": "-", "marker":"D"},
     "py.SAEM.parallel": {"label": "py.SAEM.parallel", "color": color_palette[3], "linestyle": ":", "marker":"D"},
     "py.SAEM.parallel.fast": {"label": "py.SAEM.parallel.fast", "color": color_palette[4], "linestyle": "-", "marker":"D"},
 }
