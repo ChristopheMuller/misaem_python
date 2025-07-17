@@ -155,7 +155,7 @@ class MissGLM_fast(BaseEstimator, ClassifierMixin):
                     if n_missing > 0:
                         
                         xi = X_sim[i,:]
-                        Oi = np.linalg.inv(sigma[np.ix_(missing_idx, missing_idx)])
+                        Oi = np.linalg.inv(sigma_inv[np.ix_(missing_idx, missing_idx)])
                         mi = mu[missing_idx]
                         lobs = beta[0] # intercept
 

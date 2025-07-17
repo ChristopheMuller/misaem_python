@@ -10,7 +10,7 @@ exp = "MAR_5d_050corr"
 
 methods_list = [
     # pySAEM(name="py.SAEM"),
-    # pySAEM_fast(name="py.SAEM.fast"),
+    pySAEM_fast(name="py.SAEM.fast.fixed"),
     # pySAEM_parallel(name="py.SAEM.parallel")
     pySAEM_parallel_fast(name="py.SAEM.parallel.fast")
 ]
