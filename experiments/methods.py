@@ -539,7 +539,7 @@ class RegLogPatByPat(Classification):
         return prediction
 
 
-from src.miss_glm import MissGLM
+from src.miss_glm_loop import MissGLM_loop
 class pySAEM(Classification):
 
     def __init__(self, name="PY.SAEM"):
@@ -550,7 +550,7 @@ class pySAEM(Classification):
 
     def fit(self, X, M, y):
         Xp = X.copy()
-        self.model = MissGLM(ll_obs_cal=False, var_cal=False, maxruns=1000)
+        self.model = MissGLM_loop(ll_obs_cal=False, var_cal=False, maxruns=1000)
         self.model.fit(Xp, y, save_trace=False, progress_bar=True)
 
     def predict_probs(self, X, M):
@@ -562,7 +562,7 @@ class pySAEM(Classification):
         return [self.model.coef_.ravel()[1:].tolist(), self.model.coef_.ravel()[0].ravel().tolist()]
 
 
-from src.miss_glm_parallel_fast import MissGLM_parallel
+from src.miss_glm import MissGLM
 class pySAEM_parallel(Classification):
 
     def __init__(self, name="PY.SAEM.parallel"):
@@ -573,7 +573,7 @@ class pySAEM_parallel(Classification):
 
     def fit(self, X, M, y):
         Xp = X.copy()
-        self.model = MissGLM_parallel(ll_obs_cal=False, var_cal=False, maxruns=1000)
+        self.model = MissGLM(ll_obs_cal=False, var_cal=False, maxruns=1000)
         self.model.fit(Xp, y, save_trace=False, progress_bar=True)
 
     def predict_probs(self, X, M):

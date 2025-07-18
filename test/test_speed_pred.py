@@ -37,7 +37,7 @@ y_train_bayes = y_bayes[n_test:n_test+n_train]
 # from src.miss_glm import MissGLM
 # from src.miss_glm_fast import MissGLM_fast as MissGLM
 # from src.miss_glm_parallel import MissGLM_parallel as MissGLM
-from src.miss_glm_parallel_fast import MissGLM_parallel_fast as MissGLM
+from src.miss_glm import MissGLM_parallel_fast as MissGLM
 
 # TRAIN
 tic = pd.Timestamp.now()

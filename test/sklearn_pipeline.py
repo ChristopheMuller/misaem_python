@@ -11,7 +11,7 @@ import os
 if os.getcwd().endswith("test"):
     os.chdir(os.path.join(os.getcwd(), ".."))
 
-from src.miss_glm_parallel_fast import MissGLM_parallel_fast # Assuming your class is in this file
+from src.miss_glm import MissGLM
 
 # %% 1. Generate Data: X_full, beta, y, M, X_obs
 
@@ -52,7 +52,7 @@ print("-" * 30)
 
 pipeline = Pipeline([
     ('scaler', StandardScaler()),
-    ('missglm', MissGLM_parallel_fast(maxruns=1000, nmcmc=2))
+    ('missglm', MissGLM(maxruns=1000, nmcmc=2))
 ])
 
 print("\n--- Scikit-learn Pipeline and Evaluation ---")

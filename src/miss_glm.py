@@ -50,15 +50,15 @@ class MissGLM(BaseEstimator, ClassifierMixin):
     """
 
     def __init__(self,
-                maxruns: int = 500,
-                tol_em: float = 1e-7,
-                nmcmc: int = 2,
-                tau: float = 1.,
-                k1: int = 50,
-                var_cal: bool = True,
-                ll_obs_cal: bool = True,
-                subsets: Optional[ArrayLike] = None,
-                seed: Optional[int] = None):
+                 maxruns: int = 500,
+                 tol_em: float = 1e-7,
+                 nmcmc: int = 2,
+                 tau: float = 1.,
+                 k1: int = 50,
+                 var_cal: bool = True,
+                 ll_obs_cal: bool = True,
+                 subsets: Optional[ArrayLike] = None,
+                 seed: Optional[int] = None):
 
         self.maxruns = maxruns
         self.tol_em = tol_em
@@ -99,7 +99,6 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         if np.any(np.isnan(y)):
             raise ValueError("No missing data allowed in response variable y")
         
-        # Remove rows where X is completely missing
         complete_rows = ~np.all(np.isnan(X), axis=1)
         X = X[complete_rows]
         y = y[complete_rows]
@@ -112,100 +111,112 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             self.subsets = np.array(self.subsets)
 
         if (len(np.unique(self.subsets)) != len(self.subsets)):
-            raise ValueError("Subsets must be unique.")            
+            raise ValueError("Subsets must be unique.")          
 
-
-        # Handle missingness indicator matrix
         rindic = np.isnan(X)
         missing_cols = np.any(rindic, axis=0)
         num_missing_cols = np.sum(missing_cols)
 
-        # Initial settings for SAEM algorithm
         if self.seed is not None:
             np.random.seed(self.seed)
 
         if num_missing_cols > 0:
-
             X_sim = np.where(rindic, np.nanmean(X, axis=0), X)
-
             mu = np.mean(X_sim, axis=0)
             sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
+            sigma_inv = np.linalg.inv(sigma)
 
-            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
-            log_reg.fit(X_sim[:,self.subsets], y)
+            log_reg_model = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
+            log_reg_model.fit(X_sim[:,self.subsets], y)
             beta = np.zeros(p + 1)
-            beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+            beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg_model.intercept_, log_reg_model.coef_.ravel()])
+            
+            unique_patterns, pattern_indices = np.unique(rindic, axis=0, return_inverse=True)
 
             if save_trace:
                 self.trace["beta"] = [beta]
                 self.trace["mu"] = [mu]
                 self.trace["sigma"] = [sigma]
+                self.trace["accepted_X"] = []
 
-            # Start SAEM iterations
             for k in tqdm(range(self.maxruns), disable=not progress_bar):
                 beta_old = beta.copy()
-                sigma_inv = np.linalg.inv(sigma)
 
-                # MCMC step - sample missing values from model 
-                # p(X_miss | X_obs, y, beta) \propto p(y | X, beta) p(X_miss | X_obs, mu, sigma) = Log Reg * conditional MVN
-                for i in range(n):
+                for pattern_idx, pattern in enumerate(unique_patterns):
+                    if not np.any(pattern):
+                        continue
 
-                    missing_idx = np.where(rindic[i])[0]
+                    rows_with_pattern = np.where(pattern_indices == pattern_idx)[0]
+                    n_pattern = len(rows_with_pattern)
+
+                    missing_idx = np.where(pattern)[0]
+                    obs_idx = np.where(~pattern)[0]
                     n_missing = len(missing_idx)
+                    
                     if n_missing > 0:
+                        Q_MM = sigma_inv[np.ix_(missing_idx, missing_idx)]
+                        Q_MO = sigma_inv[np.ix_(missing_idx, obs_idx)]
                         
-                        xi = X_sim[i,:]
-                        Oi = np.linalg.inv(sigma_inv[np.ix_(missing_idx, missing_idx)])
-                        mi = mu[missing_idx]
-                        lobs = beta[0] # intercept
-
-                        if n_missing < p:
-                            obs_idx = np.setdiff1d(np.arange(p), missing_idx)
-                            mi = mi - (xi[obs_idx] - mu[obs_idx]) @ sigma_inv[np.ix_(obs_idx, missing_idx)] @ Oi
-                            lobs = lobs + np.sum(xi[obs_idx] * beta[obs_idx + 1])
-
-                        cobs = np.exp(lobs)
-
-                        xina = xi[missing_idx]
-                        betana = beta[missing_idx + 1]
-
-                        Oi_chol = np.linalg.cholesky(Oi)
-                        for m in range(self.nmcmc):
-                            xina_c = mi + np.random.normal(size=n_missing) @ Oi_chol
-                            if y[i] == 1:
-                                alpha = (1+np.exp(-sum(xina*betana))/cobs)/(1+np.exp(-sum(xina_c*betana))/cobs)
-                            else:
-                                alpha = (1+np.exp(sum(xina*betana))*cobs)/(1+np.exp(sum(xina_c*betana))*cobs)
-                            if np.random.uniform() < alpha:
-                                xina = xina_c
+                        sigma_cond_M = np.linalg.inv(Q_MM)
                         
-                        X_sim[i, missing_idx] = xina
+                        X_O = X_sim[rows_with_pattern][:, obs_idx]
+                        
+                        delta_X_term = (X_O - mu[obs_idx]).T
+                        adjustment_term = (sigma_cond_M @ (Q_MO @ delta_X_term)).T
+                        mu_cond_M = mu[missing_idx] - adjustment_term
 
+                        lobs = beta[0] + X_O @ beta[obs_idx + 1]
+                    
+                    else:
+                        sigma_cond_M = sigma.copy()
+                        mu_cond_M = np.tile(mu, (n_pattern, 1))
+                        lobs = beta[0]
 
+                    cobs = np.exp(lobs)
+                    xina = X_sim[rows_with_pattern][:, missing_idx]
+                    betana = beta[missing_idx + 1]
+                    y_pattern = y[rows_with_pattern]
+                    
+                    chol_sigma_cond_M = np.linalg.cholesky(sigma_cond_M)
 
-                # Fit logistic regression using complete cases in X_sim
-                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
-                log_reg.fit(X_sim[:,self.subsets], y)
+                    for m in range(self.nmcmc):
+                        xina_c = mu_cond_M + np.random.normal(size=(n_pattern, n_missing)) @ chol_sigma_cond_M
+                        
+                        current_logit_contrib = np.sum(xina * betana, axis=1)
+                        candidate_logit_contrib = np.sum(xina_c * betana, axis=1)
+                        
+                        is_y1 = (y_pattern == 1)
+                        
+                        ratio_y1 = (1 + np.exp(-current_logit_contrib) / cobs) / (1 + np.exp(-candidate_logit_contrib) / cobs)
+                        ratio_y0 = (1 + np.exp(current_logit_contrib) * cobs) / (1 + np.exp(candidate_logit_contrib) * cobs)
+                        
+                        alpha = np.where(is_y1, ratio_y1, ratio_y0)
+                        
+                        accepted = np.random.uniform(size=n_pattern) < alpha
+                        xina[accepted] = xina_c[accepted]
+                    
+                    X_sim[np.ix_(rows_with_pattern, missing_idx)] = xina
+
+                log_reg_model.fit(X_sim[:,self.subsets], y)
                 beta_new = np.zeros(p + 1)
-                beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
+                beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg_model.intercept_, log_reg_model.coef_.ravel()])
 
-                # Update beta using SAEM step size
                 gamma = 1 if k < self.k1 else 1 / ((k - self.k1 + 1) ** self.tau)
                 beta = (1 - gamma) * beta + gamma * beta_new
-                mu = (1 - gamma) * mu + gamma * np.nanmean(X_sim, axis=0)
-                sigma = (1 - gamma) * sigma + gamma * np.cov(X_sim, rowvar=False)
+                mu = (1 - gamma) * mu + gamma * np.mean(X_sim, axis=0)
+                sigma = (1 - gamma) * sigma + gamma * np.cov(X_sim, rowvar=False, bias=True)
+                sigma_inv = np.linalg.inv(sigma)
 
                 if save_trace:
-                    self.trace["beta"].append(beta)
-                    self.trace["mu"].append(mu)
-                    self.trace["sigma"].append(sigma)
+                    self.trace["beta"].append(beta.copy())
+                    self.trace["mu"].append(mu.copy())
+                    self.trace["sigma"].append(sigma.copy())
 
-                # Check for convergence
                 if np.sum((beta - beta_old) ** 2) < self.tol_em:
                     if progress_bar:
                         print(f"...converged after {k+1} iterations.")
                     break
-
+            
             var_obs = None
             ll = None
             std_obs = None
@@ -218,20 +229,19 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             if self.ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
-            
 
         else:
-            # Case when there are no missing values
             log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)
             sigma = np.cov(X, rowvar=False)*(n-1)/n
             if self.var_cal:
-                P = np.exp(X @ beta) / (1 + np.exp(X @ beta))
+                X_design = np.hstack([np.ones((n, 1)), X])
+                linear_pred = X_design @ beta
+                P = 1 / (1 + np.exp(-linear_pred))
                 W = np.diag(P * (1 - P))
-                X = np.hstack([np.ones((n, 1)), X])
-                var_obs = np.linalg.inv(X.T @ W @ X)
+                var_obs = np.linalg.inv(X_design.T @ W @ X_design)
                 std_obs = np.sqrt(np.diag(var_obs))
                 self.std_err = std_obs
             
@@ -239,12 +249,10 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
 
-        # Store coefficients and parameters
         self.coef_ = beta[np.hstack([0, self.subsets + 1])]
         self.mu_ = mu
         self.sigma_ = sigma
         return self
-    
 
     def predict_proba(self, Xtest, method="map", nmcmc=500):
         
@@ -291,7 +299,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 mu_cond = mu1 + sigma12 @ solve_term.T
                 
                 Xtest[rows_with_pattern, miss_col] = mu_cond.T
-                
+            
             elif method.lower() == "map":
                 n_pattern = len(rows_with_pattern)
                 miss_col = np.where(pattern)[0]
@@ -336,7 +344,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             pr_saem = 1 / (1 + np.exp(-linear_pred))
 
         return np.vstack([1 - pr_saem, pr_saem]).T
-    
+
     def predict(self, Xtest, method="map"):
         """Predict class labels for samples in X.
         
@@ -350,9 +358,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         C : array of shape (n_samples,)
             Predicted class label per sample.
         """
-        # Your existing predict implementation
         return (self.predict_proba(Xtest, method=method)[:, 1] >= 0.5).astype(int)
-
 
 
 

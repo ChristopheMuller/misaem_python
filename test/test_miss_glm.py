@@ -10,7 +10,7 @@ import os
 if os.getcwd().endswith("test"):
     os.chdir(os.path.join(os.getcwd(), ".."))
 
-from src.miss_glm import MissGLM
+from src.miss_glm_loop import MissGLM_loop as MissGLM
 
 # %%
 

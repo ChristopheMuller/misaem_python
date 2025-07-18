@@ -109,7 +109,12 @@ for i, score in enumerate(scores_sel):
     # line at 
     axes[i].axhline(0, color="black", linestyle="--", linewidth=0.5)
 
+# plt.suptitle("MCAR - 20 dimensions - 0.5 correlation", fontsize=16)
+plt.suptitle("MCAR - 5 dimensions - 0.95 correlation", fontsize=16)
+
 plt.tight_layout()
+# plt.savefig("tables_and_figures/figures/MCAR_20d_05corr.png", bbox_inches='tight')
+plt.savefig("tables_and_figures/figures/MCAR_5d_095corr.png", bbox_inches='tight')
 plt.show()
     
 
