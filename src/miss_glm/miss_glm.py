@@ -1,11 +1,11 @@
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_X_y
-from typing import Optional, List, Dict, Any
+from typing import Optional
 import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
-from .utils import louis_lr_saem, likelihood_saem, combinations, log_reg
+from .utils import louis_lr_saem, likelihood_saem
 
 
 
