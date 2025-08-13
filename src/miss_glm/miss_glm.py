@@ -95,7 +95,6 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             Returns self.
         """
 
-        X, y = check_X_y(X, y, accept_sparse=False, allow_nd=True, ensure_all_finite="allow-nan")
         if np.any(np.isnan(y)):
             raise ValueError("No missing data allowed in response variable y")
         
