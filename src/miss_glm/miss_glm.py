@@ -1,6 +1,6 @@
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_X_y
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.linear_model import LogisticRegression
@@ -74,7 +74,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.sigma_ = None
         self.ll_obs = None
         self.std_err = None
-        self.trace = {}
+        self.trace: Dict[str, List[Any]] = {}
 
     def fit(self, X, y, save_trace=False, progress_bar=True):
         """Fit the model using SAEM algorithm.
