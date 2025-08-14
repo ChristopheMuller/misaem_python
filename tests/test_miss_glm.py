@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from sklearn.metrics import roc_auc_score
-from miss_glm.miss_glm import MissGLM
+from miss_glm import MissGLM
 
 def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, seed=1324):
     np.random.seed(seed)

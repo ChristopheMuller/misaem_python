@@ -293,12 +293,12 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 sigma22 = sigma_saem[np.ix_(obs_col, obs_col)]
 
                 x2 = xi_pattern[:, obs_col]
+                mu1_rep = np.tile(mu1, (len(rows_with_pattern), 1)).T
                 
                 solve_term = np.linalg.solve(sigma22, (x2 - mu2).T).T
-                mu_cond = mu1 + sigma12 @ solve_term.T
-                
-                Xtest[rows_with_pattern, miss_col] = mu_cond.T
-            
+                mu_cond = mu1_rep + sigma12 @ solve_term.T
+                Xtest[np.ix_(rows_with_pattern, miss_col)] = mu_cond.T
+
             elif method.lower() == "map":
                 n_pattern = len(rows_with_pattern)
                 miss_col = np.where(pattern)[0]

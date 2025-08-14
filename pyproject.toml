@@ -3,7 +3,7 @@ requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "miss-glm"
+name = "miss_glm"
 version = "0.1.0"
 authors = [
   { name="Christophe Muller", email="mullerchristophe21@gmail.com" },
