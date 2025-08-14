@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from sklearn.metrics import roc_auc_score
+
 from miss_glm import MissGLM
 
 

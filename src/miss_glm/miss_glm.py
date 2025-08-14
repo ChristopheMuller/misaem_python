@@ -1,11 +1,12 @@
-from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import check_X_y
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 from numpy.typing import ArrayLike
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
-from .utils import louis_lr_saem, likelihood_saem
+
+from .utils import likelihood_saem, louis_lr_saem
 
 
 class MissGLM(BaseEstimator, ClassifierMixin):
