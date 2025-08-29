@@ -128,7 +128,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             sigma_inv = np.linalg.inv(sigma)
 
             log_reg_model = LogisticRegression(
-                solver="lbfgs", max_iter=1000, fit_intercept=True
+                solver="lbfgs", max_iter=1000, fit_intercept=True, penalty=None
             )
             log_reg_model.fit(X_sim[:, self.subsets], y)
             beta = np.zeros(p + 1)
@@ -259,7 +259,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 self.ll_obs = ll
 
         else:
-            log_reg = LogisticRegression(solver="lbfgs", max_iter=1000)
+            log_reg = LogisticRegression(solver="lbfgs", max_iter=1000, penalty=None)
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)
