@@ -131,7 +131,7 @@ class MissGLM_loop(BaseEstimator, ClassifierMixin):
             mu = np.mean(X_sim, axis=0)
             sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
 
-            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True)
+            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, fit_intercept=True, penalty=None)
             log_reg.fit(X_sim[:,self.subsets], y)
             beta = np.zeros(p + 1)
             beta[np.hstack([0, self.subsets+1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
@@ -184,7 +184,7 @@ class MissGLM_loop(BaseEstimator, ClassifierMixin):
 
 
                 # Fit logistic regression using complete cases in X_sim
-                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
+                log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, penalty=None)
                 log_reg.fit(X_sim[:,self.subsets], y)
                 beta_new = np.zeros(p + 1)
                 beta_new[np.hstack([0,self.subsets + 1])] = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
@@ -222,7 +222,7 @@ class MissGLM_loop(BaseEstimator, ClassifierMixin):
 
         else:
             # Case when there are no missing values
-            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000)
+            log_reg = LogisticRegression(solver='lbfgs', max_iter=1000, penalty=None)
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)
