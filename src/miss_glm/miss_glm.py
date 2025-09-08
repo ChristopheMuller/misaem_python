@@ -24,6 +24,10 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         Learning rate decay parameter.
     k1 : int, default=50
         Number of initial iterations with step size 1.
+    lr_penalty : {'l1', 'l2', 'elasticnet', None}, default=None
+        Specify the norm of the penalty used in logistic regression. See scikit-learn's LogisticRegression for details.
+    lr_C : float, default=1.0
+        Inverse of regularization strength for logistic regression. See scikit-learn's LogisticRegression for details.
     var_cal : bool, default=True
         Whether to calculate variance estimates.
     ll_obs_cal : bool, default=True
@@ -56,6 +60,8 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         nmcmc: int = 2,
         tau: float = 1.0,
         k1: int = 50,
+        lr_penalty: Optional[str] = None,
+        lr_C: float = 1.0,
         var_cal: bool = True,
         ll_obs_cal: bool = True,
         subsets: Optional[ArrayLike] = None,
@@ -128,7 +134,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
             sigma_inv = np.linalg.inv(sigma)
 
             log_reg_model = LogisticRegression(
-                solver="lbfgs", max_iter=1000, fit_intercept=True, penalty=None
+                solver="lbfgs", max_iter=1000, fit_intercept=True, penalty=self.lr_penalty, C=self.lr_C
             )
             log_reg_model.fit(X_sim[:, self.subsets], y)
             beta = np.zeros(p + 1)
@@ -259,7 +265,7 @@ class MissGLM(BaseEstimator, ClassifierMixin):
                 self.ll_obs = ll
 
         else:
-            log_reg = LogisticRegression(solver="lbfgs", max_iter=1000, penalty=None)
+            log_reg = LogisticRegression(solver="lbfgs", max_iter=1000, penalty=self.lr_penalty, C=self.lr_C)
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)
