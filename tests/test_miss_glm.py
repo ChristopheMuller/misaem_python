@@ -1,74 +1,171 @@
 import numpy as np
+import pandas as pd
 import pytest
-from sklearn.metrics import roc_auc_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.utils.estimator_checks import check_estimator
 
 from misaem import SAEMLogisticRegression
 
 
-def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, random_state=1324):
-    np.random.seed(random_state)
-    X = np.random.normal(size=(n_samples, n_features))
-    true_beta = np.hstack(([0.5], np.random.normal(size=n_features)))
-    linear_predictor = np.hstack((np.ones((n_samples, 1)), X)) @ true_beta
-    probabilities = 1 / (1 + np.exp(-linear_predictor))
+@pytest.fixture(scope="module")
+def data():
+    np.random.seed(1324)
+    n_samples = 200
+    n_features = 5
+    X = np.random.randn(n_samples, n_features)
+    true_beta = np.hstack([0.5, np.random.normal(size=n_features)])
+    linear_pred = np.hstack([np.ones((n_samples, 1)), X]) @ true_beta
+    probabilities = 1 / (1 + np.exp(-linear_pred))
     y = np.random.binomial(1, probabilities)
-    n_missing = int(n_samples * n_features * missing_percentage)
-    missing_indices = np.random.choice(n_samples * n_features, n_missing, replace=False)
-    X.ravel()[missing_indices] = np.nan
-    return X, y, true_beta
+    
+    X_missing = X.copy()
+    missing_mask = np.random.rand(n_samples, n_features) < 0.2
+    X_missing[missing_mask] = np.nan
+    
+    return X, X_missing, y
+
+## 1. Tests for Invalid Inputs and Error Handling
+
+@pytest.mark.parametrize(
+    "param, invalid_value",
+    [
+        ("maxruns", 0),
+        ("maxruns", -10),
+        ("tol_em", 0.0),
+        ("tol_em", -0.1),
+        ("nmcmc", 0),
+        ("k1", -1),
+        ("lr_C", -1.0),
+        ("lr_penalty", "l3"),
+        ("lr_penalty", "elastic_net"),
+    ],
+)
+def test_init_raises_error_on_invalid_params(param, invalid_value):
+    with pytest.raises(ValueError):
+        params = {param: invalid_value}
+        SAEMLogisticRegression(**params)
 
 
-def test_saem_log_reg_roc_auc_impute():
-    X, y, _ = generate_data()
-    model = SAEMLogisticRegression(random_state=1324)
-    model.fit(X, y)
-    y_proba = model.predict_proba(X, method="impute")
-    roc_auc = roc_auc_score(y, y_proba[:, 1])
-    assert (
-        roc_auc > 0.75
-    ), f"ROC AUC score of {roc_auc:.4f} is not above the 0.75 threshold for 'impute' method."
+def test_fit_raises_error_on_missing_y(data):
+    _, X_missing, y = data
+    y_with_nan = y.astype(float)
+    y_with_nan[0] = np.nan
+    model = SAEMLogisticRegression()
+    with pytest.raises(ValueError, match="No missing data allowed in response variable y"):
+        model.fit(X_missing, y_with_nan)
 
 
-def test_saem_log_reg_roc_auc_map():
-    X, y, _ = generate_data()
-    model = SAEMLogisticRegression(random_state=1324)
-    model.fit(X, y)
-    y_proba = model.predict_proba(X, method="map")
-    roc_auc = roc_auc_score(y, y_proba[:, 1])
-    assert (
-        roc_auc > 0.75
-    ), f"ROC AUC score of {roc_auc:.4f} is not above the 0.75 threshold for 'map' method."
+def test_fit_raises_error_on_duplicate_subsets(data):
+    _, X_missing, y = data
+    model = SAEMLogisticRegression(subsets=[0, 1, 0, 2])
+    with pytest.raises(ValueError, match="Subsets must be unique."):
+        model.fit(X_missing, y)
 
 
-def test_saem_log_reg_no_missing_data():
-    X, y, _ = generate_data(missing_percentage=0.0)
-    model = SAEMLogisticRegression(random_state=1324)
-    model.fit(X, y)
-    y_proba = model.predict_proba(X)
-    roc_auc = roc_auc_score(y, y_proba[:, 1])
-    assert (
-        roc_auc > 0.75
-    ), f"ROC AUC score of {roc_auc:.4f} is not above the 0.75 threshold for no missing data."
-    assert np.allclose(
-        model.coef_[1:], model.coef_[1:], rtol=1e-1
-    ), "Coefficients should be correctly estimated for complete data."
+def test_predict_proba_raises_error_on_invalid_method(data):
+    _, X_missing, y = data
+    model = SAEMLogisticRegression(random_state=42)
+    model.fit(X_missing, y)
+    with pytest.raises(ValueError, match="Method must be either 'impute' or 'map'"):
+        model.predict_proba(X_missing, method="invalid_method")
+
+## 2. Tests for Different Input Formats
+
+def test_fit_predict_with_pandas_dataframe(data):
+    _, X_missing, y = data
+    X_df = pd.DataFrame(X_missing, columns=[f"feature_{i}" for i in range(X_missing.shape[1])])
+    y_s = pd.Series(y, name="target")
+
+    model = SAEMLogisticRegression(random_state=42)
+    
+    try:
+        model.fit(X_df, y_s)
+        y_pred = model.predict(X_df)
+    except Exception as e:
+        pytest.fail(f"Model failed to run with pandas DataFrame/Series inputs: {e}")
+
+    assert y_pred.shape == (X_df.shape[0],)
+    assert isinstance(model.coef_, np.ndarray)
 
 
-def test_saem_log_reg_predict_output_shape():
-    X, y, _ = generate_data()
-    model = SAEMLogisticRegression(random_state=1324)
-    model.fit(X, y)
+def test_fit_predict_with_list_of_lists(data):
+    _, X_missing, y = data
+    X_list = X_missing.tolist()
+    y_list = y.tolist()
 
-    X_test = X.copy()
+    model = SAEMLogisticRegression(random_state=42)
+    
+    try:
+        model.fit(X_list, y_list)
+        y_pred = model.predict(X_list)
+    except Exception as e:
+        pytest.fail(f"Model failed to run with list inputs: {e}")
+        
+    assert y_pred.shape == (len(X_list),)
 
-    y_pred_proba_impute = model.predict_proba(X_test, method="impute")
-    assert y_pred_proba_impute.shape == (X.shape[0], 2)
+## 3. Other Meaningful Tests
 
-    y_pred_proba_map = model.predict_proba(X_test, method="map")
-    assert y_pred_proba_map.shape == (X.shape[0], 2)
+def test_reproducibility_with_random_state(data):
+    _, X_missing, y = data
+    
+    model1 = SAEMLogisticRegression(random_state=123, maxruns=50)
+    model1.fit(X_missing, y, progress_bar=False)
+    
+    model2 = SAEMLogisticRegression(random_state=123, maxruns=50)
+    model2.fit(X_missing, y, progress_bar=False)
+    
+    np.testing.assert_allclose(model1.coef_, model2.coef_, rtol=1e-9)
+    np.testing.assert_allclose(model1.mu_, model2.mu_, rtol=1e-9)
+    np.testing.assert_allclose(model1.sigma_, model2.sigma_, rtol=1e-9)
 
-    y_pred_impute = model.predict(X_test, method="impute")
-    assert y_pred_impute.shape == (X.shape[0],)
 
-    y_pred_map = model.predict(X_test, method="map")
-    assert y_pred_map.shape == (X.shape[0],)
+def test_behavior_with_no_missing_data_matches_sklearn(data):
+    X, _, y = data
+    
+    saem_model = SAEMLogisticRegression(random_state=42)
+    saem_model.fit(X, y)
+
+    sklearn_model = LogisticRegression(solver="lbfgs", random_state=42, penalty=None)
+    sklearn_model.fit(X, y)
+    
+    np.testing.assert_allclose(saem_model.coef_, sklearn_model.coef_, rtol=1e-4)
+    np.testing.assert_allclose(saem_model.intercept_, sklearn_model.intercept_, rtol=1e-4)
+
+
+def test_subsets_functionality(data):
+    _, X_missing, y = data
+    subsets = [1, 3] 
+    
+    model = SAEMLogisticRegression(subsets=subsets, random_state=42)
+    model.fit(X_missing, y, progress_bar=False)
+    
+    assert model.coef_.ravel().shape[0] == len(subsets)
+
+
+def test_all_rows_are_nan_edge_case():
+    X = np.full((10, 3), np.nan)
+    y = np.array([0, 1] * 5)
+    model = SAEMLogisticRegression()
+    
+    with pytest.raises(ValueError, match="X contains only NaN values."):
+        model.fit(X, y)
+
+def test_few_rows_only_nan(data):
+    _, X_missing, y = data
+    X_missing[:3, :] = np.nan  
+    model = SAEMLogisticRegression(random_state=42)
+    
+    try:
+        model.fit(X_missing, y, progress_bar=False)
+    except Exception as e:
+        pytest.fail(f"Model failed to run with few rows of all NaNs: {e}")
+    
+    assert model.coef_ is not None
+
+def test_one_column_full_nan(data):
+    _, X_missing, y = data
+    X_missing[:, 0] = np.nan  
+    model = SAEMLogisticRegression(random_state=42)
+    
+    with pytest.raises(ValueError, match="X contains at least one column with only NaN values."):
+        model.fit(X_missing, y)

@@ -95,12 +95,6 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         self.random_state = random_state
         self.var_cal = var_cal
         self.ll_obs_cal = ll_obs_cal
-        self.coef_ = None
-        self.mu_ = None
-        self.sigma_ = None
-        self.ll_obs = None
-        self.std_err = None
-        self.trace: Dict[str, List[Any]] = {}
 
     def fit(self, X, y, save_trace=False, progress_bar=True):
         """Fit the model using SAEM algorithm.
@@ -121,8 +115,26 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
             Returns self.
         """
 
+        X = X.copy()
+        y = y.copy()
+
+        X = np.asarray(X)
+        y = np.asarray(y).ravel()
+
         if np.any(np.isnan(y)):
             raise ValueError("No missing data allowed in response variable y")
+        if np.all(np.isnan(X)):
+            raise ValueError("X contains only NaN values.")
+        if np.any(np.all(np.isnan(X), axis=0)):
+            raise ValueError("X contains at least one column with only NaN values.")
+        if np.any(np.all(np.isnan(X), axis=1)):
+            y = y[~np.all(np.isnan(X), axis=1)]
+            X = X[~np.all(np.isnan(X), axis=1)]
+        if X.shape[0] != y.shape[0]:
+            raise ValueError("Number of samples in X and y do not match.")
+        if len(np.unique(y)) != 2 or not np.array_equal(np.unique(y), [0, 1]):
+            raise ValueError("y must be binary with values 0 and 1.")
+        
 
         complete_rows = ~np.all(np.isnan(X), axis=1)
         X = X[complete_rows]
