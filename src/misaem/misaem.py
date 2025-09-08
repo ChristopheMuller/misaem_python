@@ -47,7 +47,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         Estimated covariance matrix of features.
     ll_obs : float, optional
         Observed data likelihood.
-    std_err : NDArray, optional
+    std_err_ : NDArray, optional
         Standard errors of coefficients.
     trace : Dict, optional
         Evolution of parameters during SAEM iterations.
@@ -288,7 +288,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                     nmcmc=100,
                 )
                 std_obs = np.sqrt(np.diag(var_obs))
-                self.std_err = std_obs
+                self.std_err_ = std_obs
 
             if self.ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
@@ -307,7 +307,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                 W = np.diag(P * (1 - P))
                 var_obs = np.linalg.inv(X_design.T @ W @ X_design)
                 std_obs = np.sqrt(np.diag(var_obs))
-                self.std_err = std_obs
+                self.std_err_ = std_obs
 
             if self.ll_obs_cal:
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
