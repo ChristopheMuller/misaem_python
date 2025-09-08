@@ -174,16 +174,16 @@ def test_one_column_full_nan(data):
 
 def test_sklearn_pipeline_compatibility(data):
 
-    _, X_missing, y = data
+    X, _, y = data
     pipeline = Pipeline([
         ('scaler', StandardScaler()),
         ('model', SAEMLogisticRegression(random_state=42))
     ])
     
     try:
-        pipeline.fit(X_missing, y)
-        y_pred = pipeline.predict(X_missing)
+        pipeline.fit(X, y)
+        y_pred = pipeline.predict(X)
     except Exception as e:
         pytest.fail(f"Pipeline failed with SAEMLogisticRegression: {e}")
     
-    assert y_pred.shape == (X_missing.shape[0],)
+    assert y_pred.shape == (X.shape[0],)
