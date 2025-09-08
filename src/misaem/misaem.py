@@ -301,7 +301,9 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                 ll = likelihood_saem(beta, mu, sigma, y, X, rindic=rindic, nmcmc=100)
                 self.ll_obs = ll
 
-        self.coef_ = beta[np.hstack([0, self.subsets + 1])]
+        final_params = beta[np.hstack([0, self.subsets + 1])]
+        self.intercept_ = np.array([final_params[0]])
+        self.coef_ = final_params[1:].reshape(1, -1)
         self.mu_ = mu
         self.sigma_ = sigma
         return self
@@ -325,13 +327,16 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         """
 
         Xtest = Xtest.copy()
+        Xtest = np.asarray(Xtest)
 
         if random_state is not None:
             np.random.seed(random_state)
 
         mu_saem = self.mu_
         sigma_saem = self.sigma_
-        beta_saem = self.coef_
+        beta = self.coef_
+        intercept = self.intercept_
+        beta_saem = np.hstack([intercept, beta.ravel()])
 
         n, p = Xtest.shape
         pr_saem = np.zeros(n)
