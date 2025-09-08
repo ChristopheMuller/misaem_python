@@ -34,8 +34,8 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         Whether to calculate observed data likelihood.
     subsets : ArrayLike, optional
         Subset of features to use in model.
-    seed : int, optional
-        Random seed for reproducibility.
+    random_state : int, optional
+        Random state for reproducibility.
 
     Attributes
     ----------
@@ -65,8 +65,24 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         var_cal: bool = True,
         ll_obs_cal: bool = True,
         subsets: Optional[ArrayLike] = None,
-        seed: Optional[int] = None,
+        random_state: Optional[int] = None,
     ):
+        
+        # check params:
+        if maxruns <= 0:
+            raise ValueError("maxruns must be a positive integer.")
+        if tol_em <= 0:
+            raise ValueError("tol_em must be a positive float.")
+        if nmcmc <= 0:
+            raise ValueError("nmcmc must be a positive integer.")
+        if tau <= 0:
+            raise ValueError("tau must be a positive float.")
+        if k1 < 0:
+            raise ValueError("k1 must be a non-negative integer.")
+        if lr_penalty not in (None, "l1", "l2", "elasticnet"):
+            raise ValueError("lr_penalty must be one of {None, 'l1', 'l2', 'elasticnet'}.")
+        if lr_C <= 0:
+            raise ValueError("lr_C must be a positive float.")
 
         self.maxruns = maxruns
         self.tol_em = tol_em
@@ -76,7 +92,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         self.lr_penalty = lr_penalty
         self.lr_C = lr_C
         self.subsets = subsets
-        self.seed = seed
+        self.random_state = random_state
         self.var_cal = var_cal
         self.ll_obs_cal = ll_obs_cal
         self.coef_ = None
@@ -126,8 +142,8 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         missing_cols = np.any(rindic, axis=0)
         num_missing_cols = np.sum(missing_cols)
 
-        if self.seed is not None:
-            np.random.seed(self.seed)
+        if self.random_state is not None:
+            np.random.seed(self.random_state)
 
         if num_missing_cols > 0:
             X_sim = np.where(rindic, np.nanmean(X, axis=0), X)
@@ -290,10 +306,28 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         self.sigma_ = sigma
         return self
 
-    def predict_proba(self, Xtest, method="map", nmcmc=500):
+    def predict_proba(self, Xtest, method="map", nmcmc=500, random_state=None):
+        """Predict class probabilities for samples in X.
+        Parameters
+        ----------
+        Xtest : array-like of shape (n_samples, n_features)
+            Samples.
+        method : {'impute', 'map'}, default='map'
+            Method to handle missing data in Xtest.
+        nmcmc : int, default=500
+            Number of MCMC samples if method is 'map'.
+        random_state : int, optional
+            Random state for reproducibility.
+        Returns
+        -------
+        array-like of shape (n_samples, 2)
+            Predicted class probabilities for each sample.
+        """
 
-        if self.seed is not None:
-            np.random.seed(self.seed)
+        Xtest = Xtest.copy()
+
+        if random_state is not None:
+            np.random.seed(random_state)
 
         mu_saem = self.mu_
         sigma_saem = self.sigma_
@@ -390,17 +424,23 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
 
         return np.vstack([1 - pr_saem, pr_saem]).T
 
-    def predict(self, Xtest, method="map"):
+    def predict(self, Xtest, method="map", nmcmc=500, random_state=None):
         """Predict class labels for samples in X.
 
         Parameters
         ----------
         Xtest : array-like of shape (n_samples, n_features)
             Samples.
+        method : {'impute', 'map'}, default='map'
+            Method to handle missing data in Xtest.
+        nmcmc : int, default=500
+            Number of MCMC samples if method is 'map'.
+        random_state : int, optional
+            Random state for reproducibility.
 
         Returns
         -------
         C : array of shape (n_samples,)
             Predicted class label per sample.
         """
-        return (self.predict_proba(Xtest, method=method)[:, 1] >= 0.5).astype(int)
+        return (self.predict_proba(Xtest, method=method, nmcmc=nmcmc, random_state=random_state)[:, 1] >= 0.5).astype(int)

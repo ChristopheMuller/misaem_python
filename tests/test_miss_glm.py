@@ -5,8 +5,8 @@ from sklearn.metrics import roc_auc_score
 from misaem import SAEMLogisticRegression
 
 
-def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, seed=1324):
-    np.random.seed(seed)
+def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, random_state=1324):
+    np.random.seed(random_state)
     X = np.random.normal(size=(n_samples, n_features))
     true_beta = np.hstack(([0.5], np.random.normal(size=n_features)))
     linear_predictor = np.hstack((np.ones((n_samples, 1)), X)) @ true_beta
@@ -20,7 +20,7 @@ def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, seed=132
 
 def test_saem_log_reg_roc_auc_impute():
     X, y, _ = generate_data()
-    model = SAEMLogisticRegression(seed=1324)
+    model = SAEMLogisticRegression(random_state=1324)
     model.fit(X, y)
     y_proba = model.predict_proba(X, method="impute")
     roc_auc = roc_auc_score(y, y_proba[:, 1])
@@ -31,7 +31,7 @@ def test_saem_log_reg_roc_auc_impute():
 
 def test_saem_log_reg_roc_auc_map():
     X, y, _ = generate_data()
-    model = SAEMLogisticRegression(seed=1324)
+    model = SAEMLogisticRegression(random_state=1324)
     model.fit(X, y)
     y_proba = model.predict_proba(X, method="map")
     roc_auc = roc_auc_score(y, y_proba[:, 1])
@@ -42,7 +42,7 @@ def test_saem_log_reg_roc_auc_map():
 
 def test_saem_log_reg_no_missing_data():
     X, y, _ = generate_data(missing_percentage=0.0)
-    model = SAEMLogisticRegression(seed=1324)
+    model = SAEMLogisticRegression(random_state=1324)
     model.fit(X, y)
     y_proba = model.predict_proba(X)
     roc_auc = roc_auc_score(y, y_proba[:, 1])
@@ -56,7 +56,7 @@ def test_saem_log_reg_no_missing_data():
 
 def test_saem_log_reg_predict_output_shape():
     X, y, _ = generate_data()
-    model = SAEMLogisticRegression(seed=1324)
+    model = SAEMLogisticRegression(random_state=1324)
     model.fit(X, y)
 
     X_test = X.copy()
