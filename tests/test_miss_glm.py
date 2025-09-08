@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from sklearn.metrics import roc_auc_score
 
-from miss_glm import MissGLM
+from misaem import SAEMLogisticRegression
 
 
 def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, seed=1324):
@@ -18,9 +18,9 @@ def generate_data(n_samples=1000, n_features=7, missing_percentage=0.2, seed=132
     return X, y, true_beta
 
 
-def test_missglm_roc_auc_impute():
+def test_saem_log_reg_roc_auc_impute():
     X, y, _ = generate_data()
-    model = MissGLM(seed=1324)
+    model = SAEMLogisticRegression(seed=1324)
     model.fit(X, y)
     y_proba = model.predict_proba(X, method="impute")
     roc_auc = roc_auc_score(y, y_proba[:, 1])
@@ -29,9 +29,9 @@ def test_missglm_roc_auc_impute():
     ), f"ROC AUC score of {roc_auc:.4f} is not above the 0.75 threshold for 'impute' method."
 
 
-def test_missglm_roc_auc_map():
+def test_saem_log_reg_roc_auc_map():
     X, y, _ = generate_data()
-    model = MissGLM(seed=1324)
+    model = SAEMLogisticRegression(seed=1324)
     model.fit(X, y)
     y_proba = model.predict_proba(X, method="map")
     roc_auc = roc_auc_score(y, y_proba[:, 1])
@@ -40,9 +40,9 @@ def test_missglm_roc_auc_map():
     ), f"ROC AUC score of {roc_auc:.4f} is not above the 0.75 threshold for 'map' method."
 
 
-def test_missglm_no_missing_data():
+def test_saem_log_reg_no_missing_data():
     X, y, _ = generate_data(missing_percentage=0.0)
-    model = MissGLM(seed=1324)
+    model = SAEMLogisticRegression(seed=1324)
     model.fit(X, y)
     y_proba = model.predict_proba(X)
     roc_auc = roc_auc_score(y, y_proba[:, 1])
@@ -54,9 +54,9 @@ def test_missglm_no_missing_data():
     ), "Coefficients should be correctly estimated for complete data."
 
 
-def test_missglm_predict_output_shape():
+def test_saem_log_reg_predict_output_shape():
     X, y, _ = generate_data()
-    model = MissGLM(seed=1324)
+    model = SAEMLogisticRegression(seed=1324)
     model.fit(X, y)
 
     X_test = X.copy()

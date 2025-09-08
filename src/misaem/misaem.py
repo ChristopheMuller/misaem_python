@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 from .utils import likelihood_saem, louis_lr_saem
 
 
-class MissGLM(BaseEstimator, ClassifierMixin):
+class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
     """Logistic regression model that handles missing data using SAEM algorithm.
 
     Parameters
@@ -73,6 +73,8 @@ class MissGLM(BaseEstimator, ClassifierMixin):
         self.nmcmc = nmcmc
         self.tau = tau
         self.k1 = k1
+        self.lr_penalty = lr_penalty
+        self.lr_C = lr_C
         self.subsets = subsets
         self.seed = seed
         self.var_cal = var_cal
