@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.linear_model import LogisticRegression
-from sklearn.utils.estimator_checks import check_estimator
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
 
 from misaem import SAEMLogisticRegression
 
@@ -169,3 +171,19 @@ def test_one_column_full_nan(data):
     
     with pytest.raises(ValueError, match="X contains at least one column with only NaN values."):
         model.fit(X_missing, y)
+
+def test_sklearn_pipeline_compatibility(data):
+
+    _, X_missing, y = data
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('model', SAEMLogisticRegression(random_state=42))
+    ])
+    
+    try:
+        pipeline.fit(X_missing, y)
+        y_pred = pipeline.predict(X_missing)
+    except Exception as e:
+        pytest.fail(f"Pipeline failed with SAEMLogisticRegression: {e}")
+    
+    assert y_pred.shape == (X_missing.shape[0],)
