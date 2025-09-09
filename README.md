@@ -83,7 +83,7 @@ plt.legend()
 plt.show()
 
 ```
-![saem coef](examples_figures/saem_coef.png)
+![saem coefficients](https://raw.githubusercontent.com/ChristopheMuller/misaem_python/main/examples_figures/saem_coef.png)
 
 ## ⚙️ scikit-learn Integration
 
@@ -106,7 +106,7 @@ accuracy_pipeline = np.mean(y_pred == y_test)
 print(f"Accuracy of SAEMLogisticRegression: {accuracy_pipeline:.4f}")
 
 ```
-![sklearn pipeline](examples_figures/sklearn_pipeline.png)
+![sklearn pipeline](https://raw.githubusercontent.com/ChristopheMuller/misaem_python/main/examples_figures/sklearn_pipeline.png)
 
 ## 📚 Reference
 
