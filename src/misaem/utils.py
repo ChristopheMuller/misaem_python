@@ -203,7 +203,7 @@ def check_X_y(X=None, y=None, predict=False):
     return X, y
 
 
-def compute_conditional_mvn_params(
+def _compute_conditional_mvn_params(
         sigma_inv, missing_idx, obs_idx, X_sim, rows_with_pattern, mu, beta
 ):
     Q_MM = sigma_inv[np.ix_(missing_idx, missing_idx)]
@@ -220,3 +220,58 @@ def compute_conditional_mvn_params(
     lobs = beta[0] + X_O @ beta[obs_idx + 1]
 
     return mu_cond_M, sigma_cond_M, lobs
+
+
+def _stochastic_step(
+    unique_patterns, pattern_indices, sigma_inv, X_sim, mu, beta, y, nmcmc
+):
+
+    for pattern_idx, pattern in enumerate(unique_patterns):
+        if not np.any(pattern):
+            continue
+
+        rows_with_pattern = np.where(pattern_indices == pattern_idx)[0]
+        n_pattern = len(rows_with_pattern)
+
+        missing_idx = np.where(pattern)[0]
+        obs_idx = np.where(~pattern)[0]
+        n_missing = len(missing_idx)
+
+        mu_cond_M, sigma_cond_M, lobs = _compute_conditional_mvn_params(
+            sigma_inv, missing_idx, obs_idx, X_sim, rows_with_pattern, mu, beta
+        )
+
+        cobs = np.exp(lobs)
+        xina = X_sim[rows_with_pattern][:, missing_idx]
+        betana = beta[missing_idx + 1]
+        y_pattern = y[rows_with_pattern]
+
+        chol_sigma_cond_M = np.linalg.cholesky(sigma_cond_M)
+
+        for m in range(nmcmc):
+            xina_c = (
+                mu_cond_M
+                + np.random.normal(size=(n_pattern, n_missing))
+                @ chol_sigma_cond_M
+            )
+
+            current_logit_contrib = np.sum(xina * betana, axis=1)
+            candidate_logit_contrib = np.sum(xina_c * betana, axis=1)
+
+            is_y1 = y_pattern == 1
+
+            ratio_y1 = (1 + np.exp(-current_logit_contrib) / cobs) / (
+                1 + np.exp(-candidate_logit_contrib) / cobs
+            )
+            ratio_y0 = (1 + np.exp(current_logit_contrib) * cobs) / (
+                1 + np.exp(candidate_logit_contrib) * cobs
+            )
+
+            alpha = np.where(is_y1, ratio_y1, ratio_y0)
+
+            accepted = np.random.uniform(size=n_pattern) < alpha
+            xina[accepted] = xina_c[accepted]
+
+        X_sim[np.ix_(rows_with_pattern, missing_idx)] = xina
+
+    return X_sim

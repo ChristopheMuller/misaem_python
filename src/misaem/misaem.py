@@ -6,7 +6,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
 
-from .utils import likelihood_saem, louis_lr_saem, check_X_y, compute_conditional_mvn_params
+from .utils import likelihood_saem, louis_lr_saem, check_X_y, _compute_conditional_mvn_params, _stochastic_step
 
 
 class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
@@ -157,65 +157,13 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                 self.trace["beta"] = [beta]
                 self.trace["mu"] = [mu]
                 self.trace["sigma"] = [sigma]
-                self.trace["accepted_X"] = []
 
             for k in tqdm(range(self.maxruns), disable=not progress_bar):
                 beta_old = beta.copy()
 
-                for pattern_idx, pattern in enumerate(unique_patterns):
-                    if not np.any(pattern):
-                        continue
-
-                    rows_with_pattern = np.where(pattern_indices == pattern_idx)[0]
-                    n_pattern = len(rows_with_pattern)
-
-                    missing_idx = np.where(pattern)[0]
-                    obs_idx = np.where(~pattern)[0]
-                    n_missing = len(missing_idx)
-
-                    if n_missing > 0:
-                        
-                        mu_cond_M, sigma_cond_M, lobs = compute_conditional_mvn_params(
-                            sigma_inv, missing_idx, obs_idx, X_sim, rows_with_pattern, mu, beta
-                        )
-
-                    else:
-                        sigma_cond_M = sigma.copy()
-                        mu_cond_M = np.tile(mu, (n_pattern, 1))
-                        lobs = beta[0]
-
-                    cobs = np.exp(lobs)
-                    xina = X_sim[rows_with_pattern][:, missing_idx]
-                    betana = beta[missing_idx + 1]
-                    y_pattern = y[rows_with_pattern]
-
-                    chol_sigma_cond_M = np.linalg.cholesky(sigma_cond_M)
-
-                    for m in range(self.nmcmc):
-                        xina_c = (
-                            mu_cond_M
-                            + np.random.normal(size=(n_pattern, n_missing))
-                            @ chol_sigma_cond_M
-                        )
-
-                        current_logit_contrib = np.sum(xina * betana, axis=1)
-                        candidate_logit_contrib = np.sum(xina_c * betana, axis=1)
-
-                        is_y1 = y_pattern == 1
-
-                        ratio_y1 = (1 + np.exp(-current_logit_contrib) / cobs) / (
-                            1 + np.exp(-candidate_logit_contrib) / cobs
-                        )
-                        ratio_y0 = (1 + np.exp(current_logit_contrib) * cobs) / (
-                            1 + np.exp(candidate_logit_contrib) * cobs
-                        )
-
-                        alpha = np.where(is_y1, ratio_y1, ratio_y0)
-
-                        accepted = np.random.uniform(size=n_pattern) < alpha
-                        xina[accepted] = xina_c[accepted]
-
-                    X_sim[np.ix_(rows_with_pattern, missing_idx)] = xina
+                X_sim = _stochastic_step(
+                    unique_patterns, pattern_indices, sigma_inv, X_sim, mu, beta, y, self.nmcmc
+                )
 
                 log_reg_model.fit(X_sim[:, self.subsets], y)
                 beta_new = np.zeros(p + 1)
