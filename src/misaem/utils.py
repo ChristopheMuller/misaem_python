@@ -162,3 +162,42 @@ def combinations(p):
         raise ValueError(
             "Error: the dimension of dataset is too large to possibly block your computer. Better try with number of variables smaller than 20."
         )
+
+
+def check_X_y(X=None, y=None, predict=False):
+    if y is None and not predict:
+        raise ValueError("y cannot be None when fitting.")
+    if X is None:
+        raise ValueError("X cannot be None.")
+
+    X = np.asarray(X).copy()
+    if y is not None:
+        y = np.asarray(y).ravel().copy()
+
+    if y is not None:
+        if np.any(np.isnan(y)):
+            raise ValueError("No missing data allowed in response variable y")
+        
+        unique_y = np.unique(y)
+        if len(unique_y) != 2 or not np.array_equal(unique_y, [0, 1]):
+            raise ValueError("y must be binary with values 0 and 1.")
+
+    if np.all(np.isnan(X)):
+        raise ValueError("X contains only NaN values.")
+
+    complete_rows = ~np.all(np.isnan(X), axis=1)
+    
+    if np.any(~complete_rows):
+        if y is not None:
+            y = y[complete_rows]
+        X = X[complete_rows]
+
+    if not predict:
+        if np.any(np.all(np.isnan(X), axis=0)):
+            raise ValueError("X contains at least one column with only NaN values.")
+
+    if y is not None:
+        if X.shape[0] != y.shape[0]:
+            raise ValueError("Number of samples in X and y do not match.")
+
+    return X, y

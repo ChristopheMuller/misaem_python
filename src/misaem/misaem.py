@@ -6,7 +6,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
 
-from .utils import likelihood_saem, louis_lr_saem
+from .utils import likelihood_saem, louis_lr_saem, check_X_y
 
 
 class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
@@ -115,30 +115,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
             Returns self.
         """
 
-        X = X.copy()
-        y = y.copy()
-
-        X = np.asarray(X)
-        y = np.asarray(y).ravel()
-
-        if np.any(np.isnan(y)):
-            raise ValueError("No missing data allowed in response variable y")
-        if np.all(np.isnan(X)):
-            raise ValueError("X contains only NaN values.")
-        if np.any(np.all(np.isnan(X), axis=0)):
-            raise ValueError("X contains at least one column with only NaN values.")
-        if np.any(np.all(np.isnan(X), axis=1)):
-            y = y[~np.all(np.isnan(X), axis=1)]
-            X = X[~np.all(np.isnan(X), axis=1)]
-        if X.shape[0] != y.shape[0]:
-            raise ValueError("Number of samples in X and y do not match.")
-        if len(np.unique(y)) != 2 or not np.array_equal(np.unique(y), [0, 1]):
-            raise ValueError("y must be binary with values 0 and 1.")
-        
-
-        complete_rows = ~np.all(np.isnan(X), axis=1)
-        X = X[complete_rows]
-        y = y[complete_rows]
+        X, y = check_X_y(X, y)
 
         n, p = X.shape
 
@@ -338,8 +315,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
             Predicted class probabilities for each sample.
         """
 
-        Xtest = Xtest.copy()
-        Xtest = np.asarray(Xtest)
+        Xtest, _ = check_X_y(X=Xtest, y=None, predict=True)
 
         if random_state is not None:
             np.random.seed(random_state)
