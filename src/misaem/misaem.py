@@ -6,7 +6,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
 
-from .utils import likelihood_saem, louis_lr_saem, check_X_y
+from .utils import likelihood_saem, louis_lr_saem, check_X_y, compute_conditional_mvn_params
 
 
 class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
@@ -174,18 +174,10 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                     n_missing = len(missing_idx)
 
                     if n_missing > 0:
-                        Q_MM = sigma_inv[np.ix_(missing_idx, missing_idx)]
-                        Q_MO = sigma_inv[np.ix_(missing_idx, obs_idx)]
-
-                        sigma_cond_M = np.linalg.inv(Q_MM)
-
-                        X_O = X_sim[rows_with_pattern][:, obs_idx]
-
-                        delta_X_term = (X_O - mu[obs_idx]).T
-                        adjustment_term = (sigma_cond_M @ (Q_MO @ delta_X_term)).T
-                        mu_cond_M = mu[missing_idx] - adjustment_term
-
-                        lobs = beta[0] + X_O @ beta[obs_idx + 1]
+                        
+                        mu_cond_M, sigma_cond_M, lobs = compute_conditional_mvn_params(
+                            sigma_inv, missing_idx, obs_idx, X_sim, rows_with_pattern, mu, beta
+                        )
 
                     else:
                         sigma_cond_M = sigma.copy()
