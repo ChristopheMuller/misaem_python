@@ -1,5 +1,8 @@
 import numpy as np
+import warnings
 
+class DataRemovalWarning(UserWarning):
+    pass
 
 def louis_lr_saem(beta, mu, Sigma, Y, X_obs, pos_var=None, rindic=None, nmcmc=2):
     if pos_var is None:
@@ -188,6 +191,11 @@ def check_X_y(X=None, y=None, predict=False):
     complete_rows = ~np.all(np.isnan(X), axis=1)
     
     if np.any(~complete_rows):
+        sum_removed = np.sum(~complete_rows)
+        warnings.warn(
+            f"{sum_removed} rows with all NaN values in X have been removed.",
+            DataRemovalWarning
+        )
         if y is not None:
             y = y[complete_rows]
         X = X[complete_rows]
