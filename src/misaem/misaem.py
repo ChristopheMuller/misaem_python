@@ -6,8 +6,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LogisticRegression
 from tqdm.auto import tqdm
 
-from .utils import likelihood_saem, louis_lr_saem, check_X_y, _compute_conditional_mvn_params, _stochastic_step
-
+from .utils import likelihood_saem, louis_lr_saem, check_X_y, _stochastic_step
 
 class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
     """Logistic regression model that handles missing data using SAEM algorithm.
@@ -24,10 +23,6 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         Learning rate decay parameter.
     k1 : int, default=50
         Number of initial iterations with step size 1.
-    lr_penalty : {'l1', 'l2', 'elasticnet', None}, default=None
-        Specify the norm of the penalty used in logistic regression. See scikit-learn's LogisticRegression for details.
-    lr_C : float, default=1.0
-        Inverse of regularization strength for logistic regression. See scikit-learn's LogisticRegression for details.
     var_cal : bool, default=True
         Whether to calculate variance estimates.
     ll_obs_cal : bool, default=True
@@ -36,21 +31,23 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         Subset of features to use in model.
     random_state : int, optional
         Random state for reproducibility.
+    lr_kwargs : dict, optional
+        Additional keyword arguments to pass to scikit-learn's LogisticRegression.
+        Common parameters include:
+        - solver : str, default='lbfgs'
+        - max_iter : int, default=1000
+        - penalty : {'l1', 'l2', 'elasticnet', None}, default=None
+        - C : float, default=1.0
 
-    Attributes
-    ----------
-    coef_ : NDArray
-        Model coefficients.
-    mu_ : NDArray
-        Estimated means of features.
-    sigma_ : NDArray
-        Estimated covariance matrix of features.
-    ll_obs : float, optional
-        Observed data likelihood.
-    std_err_ : NDArray, optional
-        Standard errors of coefficients.
-    trace : Dict, optional
-        Evolution of parameters during SAEM iterations.
+    Examples
+    --------
+    >>> # Use default LogisticRegression parameters
+    >>> model = SAEMLogisticRegression()
+    
+    >>> # Customize LogisticRegression parameters
+    >>> model = SAEMLogisticRegression(
+    ...     lr_kwargs={'solver': 'liblinear', 'max_iter': 5000, 'penalty': 'l2'}
+    ... )
     """
 
     def __init__(
@@ -60,12 +57,11 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         nmcmc: int = 2,
         tau: float = 1.0,
         k1: int = 50,
-        lr_penalty: Optional[str] = None,
-        lr_C: float = 1.0,
         var_cal: bool = True,
         ll_obs_cal: bool = True,
         subsets: Optional[ArrayLike] = None,
         random_state: Optional[int] = None,
+        lr_kwargs: Optional[Dict[str, Any]] = None,
     ):
         
         # check params:
@@ -79,22 +75,32 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
             raise ValueError("tau must be a positive float.")
         if k1 < 0:
             raise ValueError("k1 must be a non-negative integer.")
-        if lr_penalty not in (None, "l1", "l2", "elasticnet"):
-            raise ValueError("lr_penalty must be one of {None, 'l1', 'l2', 'elasticnet'}.")
-        if lr_C <= 0:
-            raise ValueError("lr_C must be a positive float.")
 
         self.maxruns = maxruns
         self.tol_em = tol_em
         self.nmcmc = nmcmc
         self.tau = tau
         self.k1 = k1
-        self.lr_penalty = lr_penalty
-        self.lr_C = lr_C
         self.subsets = subsets
         self.random_state = random_state
         self.var_cal = var_cal
         self.ll_obs_cal = ll_obs_cal
+        self.lr_kwargs = lr_kwargs or {}
+        
+        lr_defaults = {
+            'solver': 'lbfgs',
+            'max_iter': 1000,
+            'fit_intercept': True,
+            'penalty': None,
+            'C': 1.0
+        }
+        
+        self._lr_params = {**lr_defaults, **self.lr_kwargs}        
+        self._trace = None
+
+    def _create_logistic_regression(self):
+        """Create a LogisticRegression instance with the configured parameters."""
+        return LogisticRegression(**self._lr_params)
 
     def fit(self, X, y, save_trace=False, progress_bar=True):
         """Fit the model using SAEM algorithm.
@@ -134,15 +140,16 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
         if self.random_state is not None:
             np.random.seed(self.random_state)
 
+        if save_trace:
+            self._trace = {"beta": [], "mu": [], "sigma": []}
+
         if num_missing_cols > 0:
             X_sim = np.where(rindic, np.nanmean(X, axis=0), X)
             mu = np.mean(X_sim, axis=0)
             sigma = np.cov(X_sim, rowvar=False) * (n - 1) / n
             sigma_inv = np.linalg.inv(sigma)
 
-            log_reg_model = LogisticRegression(
-                solver="lbfgs", max_iter=1000, fit_intercept=True, penalty=self.lr_penalty, C=self.lr_C
-            )
+            log_reg_model = self._create_logistic_regression()
             log_reg_model.fit(X_sim[:, self.subsets], y)
             beta = np.zeros(p + 1)
             beta[np.hstack([0, self.subsets + 1])] = np.hstack(
@@ -154,9 +161,9 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
             )
 
             if save_trace:
-                self.trace["beta"] = [beta]
-                self.trace["mu"] = [mu]
-                self.trace["sigma"] = [sigma]
+                self._trace["beta"].append(beta.copy())
+                self._trace["mu"].append(mu.copy())
+                self._trace["sigma"].append(sigma.copy())
 
             for k in tqdm(range(self.maxruns), disable=not progress_bar):
                 beta_old = beta.copy()
@@ -165,6 +172,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                     unique_patterns, pattern_indices, sigma_inv, X_sim, mu, beta, y, self.nmcmc
                 )
 
+                log_reg_model = self._create_logistic_regression()
                 log_reg_model.fit(X_sim[:, self.subsets], y)
                 beta_new = np.zeros(p + 1)
                 beta_new[np.hstack([0, self.subsets + 1])] = np.hstack(
@@ -180,9 +188,9 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                 sigma_inv = np.linalg.inv(sigma)
 
                 if save_trace:
-                    self.trace["beta"].append(beta.copy())
-                    self.trace["mu"].append(mu.copy())
-                    self.trace["sigma"].append(sigma.copy())
+                    self._trace["beta"].append(beta.copy())
+                    self._trace["mu"].append(mu.copy())
+                    self._trace["sigma"].append(sigma.copy())
 
                 if np.sum((beta - beta_old) ** 2) < self.tol_em:
                     if progress_bar:
@@ -212,7 +220,7 @@ class SAEMLogisticRegression(BaseEstimator, ClassifierMixin):
                 self.ll_obs = ll
 
         else:
-            log_reg = LogisticRegression(solver="lbfgs", max_iter=1000, penalty=self.lr_penalty, C=self.lr_C)
+            log_reg = self._create_logistic_regression()
             log_reg.fit(X, y)
             beta = np.hstack([log_reg.intercept_, log_reg.coef_.ravel()])
             mu = np.nanmean(X, axis=0)

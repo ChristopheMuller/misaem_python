@@ -37,9 +37,6 @@ def data():
         ("tol_em", -0.1),
         ("nmcmc", 0),
         ("k1", -1),
-        ("lr_C", -1.0),
-        ("lr_penalty", "l3"),
-        ("lr_penalty", "elastic_net"),
     ],
 )
 def test_init_raises_error_on_invalid_params(param, invalid_value):
@@ -187,3 +184,245 @@ def test_sklearn_pipeline_compatibility(data):
         pytest.fail(f"Pipeline failed with SAEMLogisticRegression: {e}")
     
     assert y_pred.shape == (X.shape[0],)
+
+def test_lr_kwargs_default_behavior():
+    """Test that default LogisticRegression parameters work correctly."""
+    np.random.seed(42)
+    X = np.random.randn(100, 3)
+    y = np.random.binomial(1, 0.5, 100)
+    
+    model = SAEMLogisticRegression(random_state=42)
+    
+    # Should not raise any errors with defaults
+    try:
+        model.fit(X, y, progress_bar=False)
+        predictions = model.predict(X)
+    except Exception as e:
+        pytest.fail(f"Default lr_kwargs should work without errors: {e}")
+    
+    assert predictions.shape == (100,)
+
+
+def test_lr_kwargs_custom_solver():
+    """Test passing custom solver to LogisticRegression."""
+    np.random.seed(42)
+    X = np.random.randn(50, 2)
+    y = np.random.binomial(1, 0.5, 50)
+    
+    # Test with liblinear solver
+    model = SAEMLogisticRegression(
+        lr_kwargs={'solver': 'liblinear', 'max_iter': 2000, 'penalty': "l2"},
+        random_state=42
+    )
+    
+    try:
+        model.fit(X, y, progress_bar=False)
+        predictions = model.predict(X)
+    except Exception as e:
+        pytest.fail(f"Custom solver should work: {e}")
+    
+    assert predictions.shape == (50,)
+
+
+def test_lr_kwargs_custom_penalty():
+    """Test passing custom penalty to LogisticRegression."""
+    np.random.seed(42)
+    X = np.random.randn(80, 3)
+    y = np.random.binomial(1, 0.5, 80)
+    
+    # Test with L1 penalty
+    model = SAEMLogisticRegression(
+        lr_kwargs={'penalty': 'l1', 'solver': 'liblinear', 'C': 0.5},
+        random_state=42
+    )
+    
+    try:
+        model.fit(X, y, progress_bar=False)
+        predictions = model.predict(X)
+    except Exception as e:
+        pytest.fail(f"Custom penalty should work: {e}")
+    
+    assert predictions.shape == (80,)
+
+
+def test_lr_kwargs_with_missing_data():
+    """Test that lr_kwargs work correctly with missing data."""
+    np.random.seed(42)
+    X = np.random.randn(60, 3)
+    X[np.random.rand(60, 3) < 0.15] = np.nan
+    y = np.random.binomial(1, 0.5, 60)
+    
+    model = SAEMLogisticRegression(
+        lr_kwargs={'solver': 'lbfgs', 'max_iter': 5000},
+        maxruns=20,  # Keep iterations low for testing
+        random_state=42
+    )
+    
+    try:
+        model.fit(X, y, progress_bar=False)
+        predictions = model.predict(X)
+    except Exception as e:
+        pytest.fail(f"lr_kwargs should work with missing data: {e}")
+
+    rows_with_at_least_one_observed = np.sum(~np.all(np.isnan(X), axis=1))
+    assert predictions.shape == (rows_with_at_least_one_observed,)
+
+
+def test_lr_kwargs_overrides_defaults():
+    """Test that user lr_kwargs properly override defaults."""
+    np.random.seed(42)
+    X = np.random.randn(40, 2)
+    y = np.random.binomial(1, 0.5, 40)
+    
+    # Set custom max_iter that's different from default
+    custom_max_iter = 500
+    model = SAEMLogisticRegression(
+        lr_kwargs={'max_iter': custom_max_iter},
+        random_state=42
+    )
+    
+    # Check that the parameter was set correctly
+    assert model._lr_params['max_iter'] == custom_max_iter
+    assert model._lr_params['solver'] == 'lbfgs'  # Should keep default
+    
+    # Test that it works in practice
+    model.fit(X, y, progress_bar=False)
+    predictions = model.predict(X)
+    assert predictions.shape == (40,)
+
+
+def test_lr_kwargs_invalid_parameter_raises_error():
+    """Test that invalid LogisticRegression parameters raise appropriate errors."""
+    np.random.seed(42)
+    X = np.random.randn(50, 2)
+    y = np.random.binomial(1, 0.5, 50)
+    
+    # Pass invalid solver
+    model = SAEMLogisticRegression(
+        lr_kwargs={'solver': 'invalid_solver'},
+        random_state=42
+    )
+    
+    # Should raise ValueError when trying to create LogisticRegression
+    with pytest.raises(ValueError):
+        model.fit(X, y, progress_bar=False)
+
+
+def test_lr_kwargs_none_handling():
+    """Test that lr_kwargs=None works correctly."""
+    np.random.seed(42)
+    X = np.random.randn(30, 2)
+    y = np.random.binomial(1, 0.5, 30)
+    
+    model = SAEMLogisticRegression(lr_kwargs=None, random_state=42)
+    
+    # Should use all defaults
+    expected_defaults = {
+        'solver': 'lbfgs',
+        'max_iter': 1000,
+        'fit_intercept': True,
+        'penalty': None,
+        'C': 1.0
+    }
+    
+    for key, expected_value in expected_defaults.items():
+        assert model._lr_params[key] == expected_value
+    
+    # Should work without errors
+    model.fit(X, y, progress_bar=False)
+    predictions = model.predict(X)
+    assert predictions.shape == (30,)
+
+
+def test_lr_kwargs_empty_dict():
+    """Test that lr_kwargs={} works correctly."""
+    np.random.seed(42)
+    X = np.random.randn(35, 2)
+    y = np.random.binomial(1, 0.5, 35)
+    
+    model = SAEMLogisticRegression(lr_kwargs={}, random_state=42)
+    
+    # Should use all defaults (same as None case)
+    expected_defaults = {
+        'solver': 'lbfgs',
+        'max_iter': 1000,
+        'fit_intercept': True,
+        'penalty': None,
+        'C': 1.0
+    }
+    
+    for key, expected_value in expected_defaults.items():
+        assert model._lr_params[key] == expected_value
+
+
+def test_lr_kwargs_comprehensive_customization():
+    """Test comprehensive customization of LogisticRegression parameters."""
+    np.random.seed(42)
+    X = np.random.randn(70, 3)
+    y = np.random.binomial(1, 0.5, 70)
+    
+    custom_params = {
+        'solver': 'liblinear',
+        'max_iter': 3000,
+        'penalty': 'l2',
+        'C': 2.0,
+        'fit_intercept': True,
+        'random_state': 123  # This should work too
+    }
+    
+    model = SAEMLogisticRegression(
+        lr_kwargs=custom_params,
+        random_state=42
+    )
+    
+    # Check all parameters were set
+    for key, expected_value in custom_params.items():
+        assert model._lr_params[key] == expected_value
+    
+    # Test functionality
+    model.fit(X, y, progress_bar=False)
+    predictions = model.predict(X)
+    assert predictions.shape == (70,)
+
+
+def test_lr_kwargs_backward_compatibility():
+    """Test that the old lr_penalty and lr_C parameters are properly removed."""
+    # This test ensures we don't have conflicts between old and new parameter systems
+    
+    # The old parameters should no longer exist in __init__
+    import inspect
+    signature = inspect.signature(SAEMLogisticRegression.__init__)
+    param_names = list(signature.parameters.keys())
+    
+    # These old parameters should NOT be in the signature anymore
+    assert 'lr_penalty' not in param_names
+    assert 'lr_C' not in param_names
+    
+    # lr_kwargs should be present
+    assert 'lr_kwargs' in param_names
+
+
+def test_lr_kwargs_with_sklearn_pipeline():
+    """Test that lr_kwargs work within sklearn pipelines."""
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+    
+    np.random.seed(42)
+    X = np.random.randn(50, 3)
+    y = np.random.binomial(1, 0.5, 50)
+    
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('model', SAEMLogisticRegression(
+            lr_kwargs={'max_iter': 2000, 'solver': 'lbfgs'},
+            random_state=42
+        ))
+    ])
+    
+    try:
+        pipeline.fit(X, y)
+        predictions = pipeline.predict(X)
+    except Exception as e:
+        pytest.fail(f"lr_kwargs should work in sklearn pipelines: {e}")
+    
+    assert predictions.shape == (50,)
